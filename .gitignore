@@ -1,0 +1,7 @@
+#template banks can potentially contain terabytes of data, so we don't want to store them in the git repository
+template_banks/*
+
+!template_banks/GSTLal_templates.npy
+
+*.log
+*.txt

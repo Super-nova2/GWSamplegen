@@ -1,0 +1,15 @@
+# generate_bank.sub -- generate template bank from parameters
+
+executable              = /cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/envs/igwn/bin/python
+arguments               = /home/alistair.mcleod/GWSamplegen/generate_bank.py
+accounting_group        = ligo.sim.o3.cbc.em.gstlal_spiir
+request_cpus            = 20
+request_memory          = 5GB
+request_disk            = 100MB
+log                     = bank.log
+output                  = outfile.txt
+error                   = errors.txt
+should_transfer_files   = Yes
+when_to_transfer_output = ON_EXIT
+
+queue
