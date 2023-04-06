@@ -6,7 +6,7 @@ template_banks/*
 #noise can also contain large amounts of data
 noise/*
 
-!noise/*.txt
+!noise/segments/*.txt
 
 *.log
 *.txt
