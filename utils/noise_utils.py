@@ -91,3 +91,9 @@ def fetch_noise_loaded(
     noises = noise_list[f_idx][:,start_idx:start_idx + noise_len * sample_rate]
     
     return noises
+
+
+
+
+
+
