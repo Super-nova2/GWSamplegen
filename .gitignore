@@ -3,5 +3,10 @@ template_banks/*
 
 !template_banks/GSTLal_templates.npy
 
+#noise can also contain large amounts of data
+noise/*
+
+!noise/*.txt
+
 *.log
 *.txt
