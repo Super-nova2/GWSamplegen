@@ -6,9 +6,9 @@ template_banks/*
 #noise can also contain large amounts of data
 noise/*
 
-!noise/segments/*.txt
+!noise/segments/*
 
-*.log
-*.txt
+/*.log
+/*.txt
 
 #testl
