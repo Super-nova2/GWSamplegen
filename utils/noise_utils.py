@@ -95,5 +95,115 @@ def fetch_noise_loaded(
 
 
 
+#utilities for downloading noise for later use
 
+def overlapping_intervals(arr1, arr2):
+    """
+    Find overlapping segments between two lists of segments from different
+    detectors.
+
+    Designed to be used with the outputs of get_seg_list as the inputs.
+
+    Keyword arguments:
+    arr1 -- segment list of first detector
+    arr1 -- segment list of second detector
+    """
+    res = []
+    arr1_pos = 0
+    arr2_pos = 0
+    len_arr1 = len(arr1)
+    len_arr2 = len(arr2)
+    # //Iterate over all intervals and store answer
+    while arr1_pos < len_arr1 and arr2_pos < len_arr2:
+        arr1_seg = arr1[arr1_pos]
+        arr2_seg = arr2[arr2_pos]
+
+        # print(arr1_seg)
+        # print(arr2_seg)
+
+        # arr1_seg fully inside of arr2_seg
+        if arr1_seg[0] >= arr2_seg[0] and arr1_seg[1] <= arr2_seg[1]:
+            res.append(arr1_seg)
+            arr1_pos += 1
+
+        # arr2_seg fully inside of arr1_seg
+        elif arr2_seg[0] >= arr1_seg[0] and arr2_seg[1] <= arr1_seg[1]:
+            res.append(arr2_seg)
+            arr2_pos += 1
+
+        # arr1_seg fully below arr2_seg
+        elif arr1_seg[0] <= arr2_seg[0] and arr1_seg[1] <= arr2_seg[0]:
+            arr1_pos += 1
+
+        # arr2_seg fully below arr1_seg
+        elif arr2_seg[0] <= arr1_seg[0] and arr2_seg[1] <= arr1_seg[0]:
+            arr2_pos += 1
+
+        # arr1_seg overlaps start of arr2_seg
+        elif arr1_seg[0] <= arr2_seg[0] <= arr1_seg[1] <= arr2_seg[1]:
+            res.append([arr2_seg[0], arr1_seg[1]])
+            arr1_pos += 1
+
+        # arr2_seg overlaps start of arr1_seg
+        elif arr2_seg[0] <= arr1_seg[0] <= arr2_seg[1] <= arr1_seg[1]:
+            res.append([arr1_seg[0], arr2_seg[1]])
+            arr2_pos += 1
+
+    if not res:
+        return [[]]
+
+    return res
+
+
+def get_seg_list(file_name, macrostart, macroend):
+    """
+    Get a list of segments from a single detector segment file bounded
+    by a GPS time window
+
+    Keyword arguments:
+    file_name -- path to detector's segment list
+    macrostart -- Start GPS time of overlap window
+    macroend -- End GPS time of overlap window
+    """
+    file = open(file_name, "r")
+
+    good_segs = []
+
+    for i in file.readlines():
+        times = i.split(" ")
+        if int(times[1]) < macrostart or int(times[0]) > macroend:
+            continue
+        else:
+            good_segs.append([int(times[0]), int(times[1])])
+
+    file.close()
+
+    if good_segs[0][0] < int(macrostart):
+        good_segs[0][0] = int(macrostart)
+    if good_segs[-1][1] > int(macroend):
+        good_segs[-1][1] = int(macroend)
+
+    return good_segs
+
+
+def combine_seg_list(file_h1, file_l1, macrostart, macroend, min_duration):
+    """
+    Find overlapping segments between two detectors within a window
+    defined by two GPS times.
+
+    Keyword arguments:
+    file_h1 -- path to H1 complete segment list
+    file_l1 -- path to L1 complete segment list
+    macrostart -- Start GPS time of overlap window
+    macroend -- End GPS time of overlap window
+    """
+    good_segs_h1 = get_seg_list(file_h1, macrostart, macroend)
+    good_segs_l1 = get_seg_list(file_l1, macrostart, macroend)
+
+    good_segs = overlapping_intervals(good_segs_h1, good_segs_l1)
+
+    #remove segments shorter than min_duration
+    good_segs = [x for x in good_segs if x[1] - x[0] > min_duration]
+
+    return good_segs, good_segs_h1, good_segs_l1
 

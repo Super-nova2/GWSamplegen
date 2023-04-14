@@ -8,7 +8,7 @@ noise/*
 
 !noise/segments/
 
-/*.log
-/*.txt
+*.log
+*.txt
 
-#testl
+**__pycache__**
