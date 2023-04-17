@@ -142,7 +142,7 @@ def data_generator(
                 fs = [f for f in fs if (done := done and f.done())]
         elif chunk_size is None:
             fs, _ = wait(futures.keys(), timeout=5)#1e-3
-            print("waiting..., mem is", current_memory)
+            print("fetching data, roughly", current_memory, "GB remaining")
 
         for future in fs:
             yield maybe_submit(current_memory, future)
