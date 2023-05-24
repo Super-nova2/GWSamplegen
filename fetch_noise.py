@@ -1,8 +1,10 @@
+import os
 import h5py
 import numpy as np
 from gwpy.timeseries import TimeSeries, TimeSeriesDict
 from utils.mldatafind.find import find_data
-from utils.noise_utils import combine_seg_list
+from utils.noise_utils import combine_seg_list, get_noise_PSD, get_valid_noise_times
+import json
 
 #script to fetch noise data from GWOSC and save it to disk. Since this requires an internet connection, 
 #you will have to run it on a node with internet access if submitting to a compute cluster.
@@ -13,13 +15,18 @@ from utils.noise_utils import combine_seg_list
 #note: in find.py, n_samples definition on line 28 needs to be: n_samples = int(n_channels * duration * sample_rate)
 #some strange bug causes it to think it's a 32bit LIGO gps time
 
-write_dir = "/fred/oz016/alistair/GWSamplegen/noise/test"
+write_dir = "/test_2"
+
+#get current working directory
+cwd = os.getcwd()
+
 sample_rate = 2048
-min_duration = 1010
+min_duration = 1000
 
+#create write_dir if it doesn't exist
+if not os.path.exists(write_dir):
+    os.mkdir(write_dir)
     
-
-
 
 ifos = ["H1","L1"]
 
@@ -61,7 +68,7 @@ segs = [[1239554617, 1239555563]]
 ifo_1 = 'noise/segments/H1_O3a.txt'
 ifo_2 = 'noise/segments/L1_O3a.txt'
 
-segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,1239150592,1239150592 + 5e5, min_duration=1000)
+segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,1239150592,1239150592 + 1e4, min_duration=min_duration)
 
 
 print(segs)
@@ -103,6 +110,17 @@ for segment in data:
 
     fname = write_dir + "/" + f"{prefix}-{t0}-{length}.npy"
     np.save(fname,arr)
+
+
+
+#after saving, we now need to calculate the PSDs.
+
+
+_, paths = get_valid_noise_times(write_dir, min_duration)
+
+
+
+
 
 
 
@@ -157,6 +175,17 @@ def split_segment(
         fname = write_dir + "/" + f"{prefix}-{t0}-{new_duration}.npy"
         np.save(fname,array_to_save)
 
+
+#save sample_rate, min_duration and ifos to a json file
+
+params = {
+    "sample_rate": 1.0/sample_rate,
+    "min_duration": min_duration,
+    "detectors": ifos
+}
+
+with open(write_dir + "/params.json", "w") as f:
+    json.dump(params, f, sort_keys=False, indent=4)
 
 """ 
 for ifo in ifos:

@@ -8,6 +8,10 @@ noise/*
 
 !noise/segments/
 
+#configs contains all the generated waveforms
+
+configs/*
+
 *.log
 *.txt
 

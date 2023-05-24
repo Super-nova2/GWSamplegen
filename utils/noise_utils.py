@@ -3,6 +3,7 @@ import numpy as np
 from typing import Iterator, List, Optional, Sequence, Tuple
 import h5py
 import matplotlib.pyplot as plt
+from pycbc.types.timeseries import TimeSeries
 
 import time
 #length of noise the waveform is injected into. for BNS, I use 1000 seconds
@@ -15,42 +16,67 @@ noise_path = "../real_noise/"
 
 #function to retrieve valid start times for injecting gravitational wave samples into. 
 
+def load_noise_paths(
+    noise_dir: str
+) -> List[str]:
+    
+    paths = os.listdir(noise_dir)
+    paths = [path for path in paths if len(path.split("-")) == 3]
+    paths = [noise_dir + path for path in paths]
+    
+    return paths
+    
     
 def get_valid_noise_times(
     noise_dir: str,
     noise_len: int
 ) -> List[int]:
-    
+    """function to return a list of valid start times """
+
     valid_times = np.array([])
     
-    #add on 10 seconds to account for post-whitening truncation
-    noise_len += 10
     
     #get all strain file paths from the noise directory, then extract their start time and duration
     paths = os.listdir(noise_dir)
-    paths = [path.split("-")[1:] for path in paths if path[:6] == 'strain']
+    paths = [path.split("-") for path in paths if len(path.split("-")) == 3]
+
+    #paths[0] is the interferometer list
+    #paths[1] is the start time
+    #paths[2] is the duration
+
+    ifo_list = paths[0][0]
     
+
     for path in paths:
-        path[0] = int(path[0])
-        path[1] = int(path[1][:-5])
-    
+        path[1] = int(path[1])
+        path[2] = int(path[2][:-4])
         
-        if path[1] <= noise_len:
+        if path[2] <= noise_len:
             print("file length is shorter than desired noise segment length, skipping...")
             continue
         
-        times = np.arange(path[0], path[0]+path[1] - noise_len)
+        times = np.arange(path[1], path[1]+path[2] - noise_len)
         valid_times = np.concatenate((valid_times,times))
         
     #ensure the file paths are in chronological order
     paths = np.array(paths)
-    paths = paths[np.argsort(paths[:,0])]
+    paths = paths[np.argsort(paths[:,1])]
+
+    valid_times = np.sort(valid_times)
+
+    #reconstruct the file paths from the start times and ifo_list
+
+    file_list = [noise_dir +"/"+ ifo_list +"-"+ path[1] +"-"+ path[2] +".npy" for path in paths]
+
+    #paths = [noise_dir + path for path in paths]
     
     #now that we have all the noise times, we load them into a list 
-    np.random.shuffle(valid_times)
+    #np.random.shuffle(valid_times)
     
+    #for each noise time, which file is it in and how far into the file is it?
+    #print(paths)
     
-    return valid_times, paths
+    return valid_times, paths, file_list
 
 
     
@@ -60,7 +86,7 @@ def load_noise_timeseries(
     
     noise_list = []
     for path in paths:
-        
+        #TODO: handle arbitrary groups of interferometers. Assume each noise file in a dir has the same ifos
         f = np.load(noise_path+"HL-"+str(path[0])+"-"+str(path[1])+".npy")
 
         noise_list.append(f)
@@ -207,3 +233,46 @@ def combine_seg_list(file_h1, file_l1, macrostart, macroend, min_duration):
 
     return good_segs, good_segs_h1, good_segs_l1
 
+
+
+def get_noise_PSD(
+    #segments: List[np.ndarray],
+    noise_paths: List[str]
+    #path: str
+):
+    """Create an averaged PSD of noise segments. This way of doing things is fine so long as the noise is stationary
+    (which it is provided the segments do not span longer than ~1 week.)
+    """
+
+    segments = []
+
+    for noise_path in noise_paths:
+        segments.append(np.load(noise_path))
+
+    ifo_psds = []
+
+    #iterate through interferometers
+    for ifo in range(len(segments[0])):
+        
+        psds = []
+        for i in range(len(segments)):
+            #setting NaNs in segments to 0. This hopefully shouldn't be needed!
+            segments[i][ifo][np.isnan(segments[i][ifo])] = 0
+            seg = TimeSeries(segments[i][ifo],delta_t=1/2048)
+            psd = seg.psd(4)
+            psds.append(psd.data * len(segments[i][ifo]))
+            
+        if ifo == 0:
+            ifo_psds.append(psd.sample_frequencies.data)
+        
+        total_length = 0
+        for segment in segments:
+            total_length += len(segment[ifo])
+
+        psd_avg = np.sum(np.array(psds), axis = 0)/total_length
+        ifo_psds.append(psd_avg)
+
+    ifo_psds = np.array(ifo_psds)
+
+    #return ifo_psds
+    np.save(os.path.dirname(noise_paths[0]) + "/psd.npy", ifo_psds)
