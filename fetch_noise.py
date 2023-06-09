@@ -178,14 +178,14 @@ def split_segment(
 
 #save sample_rate, min_duration and ifos to a json file
 
-params = {
+args = {
     "sample_rate": 1.0/sample_rate,
     "min_duration": min_duration,
     "detectors": ifos
 }
 
-with open(write_dir + "/params.json", "w") as f:
-    json.dump(params, f, sort_keys=False, indent=4)
+with open(write_dir + "/args.json", "w") as f:
+    json.dump(args, f, sort_keys=False, indent=4)
 
 """ 
 for ifo in ifos:

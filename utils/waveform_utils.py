@@ -13,7 +13,7 @@ def errfunc(mass1,mass2,m1true,m2true):
     return np.abs(mass2/mass1 - m2true/m1true) + 1000*np.abs(chirp_mass(mass1,mass2) -chirp_mass(m1true,m2true))
 
 
-def choose_templates(template_bank_params, waveform_params, templates_per_waveform):
+def choose_templates(template_bank_params, waveform_params, templates_per_waveform, template_selection_width):
 
     mass1,mass2 = waveform_params['mass1'],waveform_params['mass2']
     cm = chirp_mass(mass1,mass2)
@@ -26,8 +26,8 @@ def choose_templates(template_bank_params, waveform_params, templates_per_wavefo
 
     #selecting templates within a 0.5% chirp mass range. 
     #TODO: make this range a parameter. higher chirp mass events are not as sensitive to chirp mass.
-    low_idx = np.searchsorted(template_bank_params[:,0],cm*0.995)
-    high_idx = np.searchsorted(template_bank_params[:,0],cm*1.005)
+    low_idx = np.searchsorted(template_bank_params[:,0],cm*(1-template_selection_width/2))
+    high_idx = np.searchsorted(template_bank_params[:,0],cm*(1+template_selection_width/2))
 
     #choosing some suboptimal templates from a normal distribution, and 1 optimal template.
 
@@ -57,7 +57,8 @@ def choose_templates(template_bank_params, waveform_params, templates_per_wavefo
 
     x = np.random.choice(x, size=templates_per_waveform-1, p=pdf3, replace=False)
 
-    x = np.append(np.sort(x), best_template)
+    x = np.sort(x)
+    x = np.insert(x,0,best_template)
 
     #making sure the templates are all unique
     for i in range(1,len(x)-1):

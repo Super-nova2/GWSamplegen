@@ -33,9 +33,10 @@
 #simulation:
 #noise length, f_lower, sample rate, 
 
-#TEMPLATE IDS
+#TODO params to add:
 #SEEDS
-
+#seconds before + after merger to slice SNR timeseries
+#waveform length?
 
 import numpy as np
 from pycbc.filter import sigma
@@ -77,7 +78,7 @@ seed = 8810235
 #number of CPUS to use
 n_cpus = 20
 
-project_dir = "./configs/test"
+project_dir = "./configs/test2"
 noise_dir = './noise/test'
 template_bank_dir = './template_banks/BNS_lowspin'
 
@@ -89,18 +90,24 @@ n_noise_samples = 1000
 approximant = "SpinTaylorT4"
 f_lower = 18
 delta_t = 1/2048
-waveform_length = 1000
+#not sure waveform_length is needed
+#waveform_length = 1000
 
 waveforms_per_file = 100
 
 detectors = ['H1','L1']
 
 network_snr_threshold = 6
-detector_snr_threshold = 4
+detector_snr_threshold = 8
 
 #number of waveform templates to match with each waveform. These templates are taken from a distribution,
 #but the first template will be guaranteed to have a high overlap with the waveform.
 templates_per_waveform = 10
+
+#when we select templates to match with the waveform, we select from a distribution of templates, but have to ensure
+#that the template has at least some overlap with the waveform. for BBH signals you can use a width up to 5%-10%,
+#but for BNS signals you should use a width of 2% or less as they are more sensitive to chirp mass.
+template_selection_width = 0.01
 
 ################################################
 #---------------INTRINSIC PARAMS---------------#
@@ -176,22 +183,22 @@ pol_max = 1.0
 
 
 #check that the noise directory exists
+#TODO: uncomment this once you've re-run the noise generation script
 
-
-#if not os.path.exists(noise_dir):
-#    raise ValueError("Noise directory does not exist. Generate a directory of noise to use with this dataset.")
+if not os.path.exists(noise_dir):
+    raise ValueError("Noise directory does not exist. Generate a directory of noise to use with this dataset.")
 
 #check that these parameters are compatible with those from the noise directory
-#with open(noise_dir + '/args.json') as f:
-#    noise_args = json.load(f)
-#    for ifo in detectors:
-#        if ifo not in noise_args['detectors']:
-#            raise ValueError("""Noise directory does not contain all the specified detectors.
-#                             Check noise directory and config file.""")
-    
-#    if noise_args['delta_t'] != delta_t:
-#        raise ValueError("""Noise delta_t does not match specified delta_t.
-#                             Check noise directory and config file.""")
+with open(noise_dir + '/args.json') as f:
+    noise_args = json.load(f)
+    for ifo in detectors:
+        if ifo not in noise_args['detectors']:
+            raise ValueError("""Noise directory does not contain all the specified detectors.
+                             Check noise directory and config file.""")
+   
+    if noise_args['delta_t'] != delta_t:
+        raise ValueError("""Noise delta_t does not match specified delta_t.
+                             Check noise directory and config file.""")
 
 #check that the template bank directory exists
 
@@ -218,7 +225,8 @@ with open(template_bank_dir + '/args.json') as f:
 
 template_bank_params = np.load(template_bank_dir + '/params.npy')
 
-
+if not os.path.exists(project_dir):
+    os.mkdir(project_dir)
 
 
 def constructPrior(
@@ -369,21 +377,22 @@ while generated_samples < n_signal_samples:
                 params[i]['mass1'], params[i]['mass2'] = params[i]['mass2'], params[i]['mass1']
 
             #choose template waveform(s) for this sample, and add them to params[i]
-            params[i]['template_waveforms'] = choose_templates(template_bank_params, params[i], templates_per_waveform)
+            params[i]['template_waveforms'] = choose_templates(template_bank_params, params[i], 
+                                                               templates_per_waveform, template_selection_width)
 
             good_params.append(params[i])
         else:
             print("discarding waveform with SNR " + str(network_snr))
 
     if iteration == 0 and len(good_waveforms)/waveforms_per_file < 0.5:
-        print("WARNING: check your priors!" + str(len(good_waveforms)/waveforms_per_file) + 
+        print("WARNING: check your priors and SNR threshold! Only " + str(len(good_waveforms)/waveforms_per_file) + 
               " of the samples meet the SNR threshold.")
     
     #now that we only have the good waveforms, we can save them to file.
     #we don't necessarily have waveforms_per_file samples in good_waveforms, so we need to check that.
 
     if len(good_waveforms) > waveforms_per_file:
-        fname = project_dir+str(iteration*waveforms_per_file)+".npz"
+        fname = project_dir+"/"+str(iteration*waveforms_per_file)+".npz"
 
         print(fname)
 
@@ -409,4 +418,46 @@ while generated_samples < n_signal_samples:
 
 good_params_dict = {key: [good_params[i][key] for i in range(len(good_params))] for key in good_params[0].keys()}
 
-np.save(project_dir+"params.npy", good_params_dict)
+np.save(project_dir+"/"+"params.npy", good_params_dict)
+
+
+#save the arguments used to generate the parameters to a file
+
+args = {"n_signal_samples": n_signal_samples,
+            "n_noise_samples": n_noise_samples,
+            "approximant": approximant,
+            "f_lower": f_lower,
+            "delta_t": delta_t,
+            "detectors": detectors,
+            "network_snr_threshold": network_snr_threshold,
+            "detector_snr_threshold": detector_snr_threshold,
+            "powerlaw_alpha": powerlaw_alpha,
+            "mass1prior": mass1prior.__name__,
+            "mass2prior": mass2prior.__name__,
+            "mass1_min": mass1_min,
+            "mass1_max": mass1_max,
+            "mass2_min": mass2_min,
+            "mass2_max": mass2_max,
+            "spin1zprior": spin1zprior.__name__,
+            "spin2zprior": spin2zprior.__name__,
+            "spin1z_min": spin1z_min,
+            "spin1z_max": spin1z_max,
+            "spin2z_min": spin2z_min,
+            "spin2z_max": spin2z_max,
+            "ra_prior": ra_prior.__name__,
+            "dec_prior": dec_prior.__name__,
+            "ra_min": ra_min,
+            "ra_max": ra_max,
+            "dec_min": dec_min,
+            "dec_max": dec_max,
+            "d_prior": d_prior.__name__,
+            "d_min": d_min,
+            "d_max": d_max,
+            "inc_prior": inc_prior.__name__,
+            "inc_min": inc_min,
+            "inc_max": inc_max,
+            "pol_prior": pol_prior.__name__,
+            "pol_min": pol_min,
+            "pol_max": pol_max}
+
+json.save(args, project_dir+"/"+"args.json")

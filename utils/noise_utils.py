@@ -31,7 +31,7 @@ def get_valid_noise_times(
     noise_dir: str,
     noise_len: int
 ) -> List[int]:
-    """function to return a list of valid start times """
+    """multipurpose function to return a list of valid start times, list of noise file paths and deconstructed file names """
 
     valid_times = np.array([])
     
@@ -78,6 +78,28 @@ def get_valid_noise_times(
     
     return valid_times, paths, file_list
 
+
+def generate_time_slides(detector_data, min_distance):
+    num_detectors = len(detector_data)
+    data_lengths = [len(data) for data in detector_data]
+    indices = [list(range(length)) for length in data_lengths]
+    used_combinations = set()
+
+    while True:
+        min_length = min(data_lengths)
+        # Limits the number of possible samples we draw from the generator
+        if len(used_combinations) == (min_length - (min_distance - 1)) * (min_length - min_distance):
+            print("No more unique combinations available.")
+            return
+        
+        sample_indices = [np.random.choice(indices[i]) for i in range(num_detectors)]
+        
+        if all(abs(sample_indices[i] - sample_indices[j]) >= min_distance for i in range(num_detectors) for j in range(i+1, num_detectors)):
+            combination = tuple(sample_indices)
+            
+            if combination not in used_combinations:
+                used_combinations.add(combination)
+                yield tuple(detector_data[i][sample_indices[i]] for i in range(num_detectors))
 
     
 def load_noise_timeseries(    
