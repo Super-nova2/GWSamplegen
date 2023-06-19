@@ -1,5 +1,12 @@
 #this file will generate the config files for a project. 
 
+#NEW PLAN: each 'config' directory will instead be a `project` directory containing:
+#1. an args file, which defines the waveform args to use, as well as the noise and template bank directories
+#2. directories for  associated SNR series + signal/noise files, and a params file containing all that directory's parameters
+# This way we can generate multiple files with the same parameters without having to create an entirely new config each time.
+# There should also be some params that can be changed on a per-file basis, such as seconds of EW
+
+
 #to note: we can have multiple noise datasets, and these can be used by different 'projects'
 #we can also have multiple template banks, which are also not necessarily unique to a project
 #we therefore need to store metadata in the noise and template bank directories, and will need to do some form of
@@ -15,28 +22,15 @@
 
 
 
-#other stuff to do:
-#pyomicron!
-
-
-#the different params needed:
-
-#intrinsic:
-#m1,m2, spin
-
-#extrinsic:
-#distance, SNR (mutually exclusive, you can choose which one you want), inclination, 
-
-#noise:
-#noise start times, 
-
-#simulation:
-#noise length, f_lower, sample rate, 
 
 #TODO params to add:
 #SEEDS
-#seconds before + after merger to slice SNR timeseries
 #waveform length?
+
+#Other params that probably should be added in a DIFFERENT file:
+#seconds before + after merger to slice SNR timeseries
+#seconds of early warning
+#duration of noise to fetch?
 
 import numpy as np
 from pycbc.filter import sigma
@@ -302,11 +296,11 @@ def get_projected_waveform_mp(args):
             polarization=args['pol'],
             t_gps=args['gps'])
         
-        delta_t_h1 = all_detectors[detector].time_delay_from_detector(
-            other_detector=all_detectors['H1'],
-            right_ascension=args['ra'],
-            declination=args['dec'],
-            t_gps=args['gps'])
+        #delta_t_h1 = all_detectors[detector].time_delay_from_detector(
+        #    other_detector=all_detectors['H1'],
+        #    right_ascension=args['ra'],
+        #    declination=args['dec'],
+        #    t_gps=args['gps'])
         
 
         #print(len(f_plus),len(f_cross),len(hp),len(hc))

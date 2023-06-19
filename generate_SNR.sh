@@ -1,9 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=generate_bank
-#SBATCH --output=generate_bank.log
-#SBATCH --cpus-per-task=20
-#SBATCH --time=04:00:00
-#SBATCH --mem=100gb
+#SBATCH --job-name=generate_SNR
+#SBATCH --output=generate_SNR.log
+#SBATCH --cpus-per-task=4
+#SBATCH --time=00:40:00
+#SBATCH --mem=80gb
+#SBATCH --gres=gpu:1
 
 module load gcc/10.3.0
 module load python/3.9.5
@@ -13,4 +14,4 @@ source /fred/oz016/alistair/nt_env/bin/activate
 
 cd "/fred/oz016/alistair/GWSamplegen"
 
-python generate_bank.py
+python SNR_series.py
