@@ -24,8 +24,7 @@ def choose_templates(template_bank_params, waveform_params, templates_per_wavefo
 
     best_template =  np.argsort(errfunc(mass1,mass2,t_mass1,t_mass2))[0]
 
-    #selecting templates within a 0.5% chirp mass range. 
-    #TODO: make this range a parameter. higher chirp mass events are not as sensitive to chirp mass.
+    #selecting a template range
     low_idx = np.searchsorted(template_bank_params[:,0],cm*(1-template_selection_width/2))
     high_idx = np.searchsorted(template_bank_params[:,0],cm*(1+template_selection_width/2))
 
@@ -54,8 +53,24 @@ def choose_templates(template_bank_params, waveform_params, templates_per_wavefo
     pdf3 = np.concatenate((pdf1[:diff]*scale1, scale2*pdf2[diff:]))
 
     # This is where we sample the number of tempaltes we want
+    #if there are nans, we are near the edge of our template bank.
+    #we instead use the pdf from only one side.
 
-    x = np.random.choice(x, size=templates_per_waveform-1, p=pdf3, replace=False)
+    if scale1 == np.inf or np.isnan(scale1):
+        if len(x) < templates_per_waveform:
+            x = np.arange(len(template_bank_params)-templates_per_waveform,len(template_bank_params)-1)
+        else:
+            x = np.random.choice(x[diff:], size=templates_per_waveform-1, p=pdf2[diff:]*scale2*2, replace=False)
+    elif scale2 == np.inf or np.isnan(scale2):
+        print("Right PDF is nan, using left PDF")
+        x = np.random.choice(x[:diff], size=templates_per_waveform-1, p=pdf1[:diff]*scale1*2, replace=False)
+    else:
+        if len(x) < templates_per_waveform:
+            x = np.arange(len(template_bank_params)-templates_per_waveform,len(template_bank_params)-1)
+        else:
+            pdf3 = np.concatenate((pdf1[:diff]*scale1, scale2*pdf2[diff:]))
+            x = np.random.choice(x, size=templates_per_waveform-1, p=pdf3, replace=False)
+    #x = np.random.choice(x, size=templates_per_waveform-1, p=pdf3, replace=False)
 
     x = np.sort(x)
     x = np.insert(x,0,best_template)

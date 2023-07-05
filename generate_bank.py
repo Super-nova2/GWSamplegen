@@ -14,16 +14,18 @@ n_cpus = 20
 
 approximant = "SpinTaylorT4"
 approximant = "TaylorF2"
+#approximant = "SEOBNRv4_ROM"
+
 f_lower = 18.0
 delta_t = 1/2048
-duration = 1024
+duration = 64
 f_final = (1/delta_t)/2
 delta_f = 1/duration
 
 flen = int(f_final/delta_f) + 1
 
 #if possible, make templates_per_file a multiple of n_cpus
-templates_per_file = 1000
+templates_per_file = 100
 
 
 #directory of all GWSamplegen template banks
@@ -31,22 +33,22 @@ main_dir = "./template_banks/"
 
 
 #name of template bank directory
-bank_dir = "BNS_lowspin_freqseries"
-
+bank_dir = "BNS_smallfiles"
+bank_dir = "BBH_smallfiles"
 
 #priors of the template bank. 
 
-mass1_min = 1.0
-mass1_max = 3.0
+mass1_min = 5
+mass1_max = 1000
 
-mass2_min = 1.0
-mass2_max = 3.0
+mass2_min = 5
+mass2_max = 1000
 
-q_min = 0.1
+q_min = 0.0
 q_max = 1.0
 
 #rather than selecting for spins, we scale the template spins by a factor. set to 0 for no spins, 1 for full spins
-spin_scale = 0.05
+spin_scale = 1
 
 #check if directory exists
 if not os.path.exists(main_dir+bank_dir):
@@ -82,19 +84,19 @@ np.save(main_dir+bank_dir+"/params.npy",templates)
 with open(main_dir+bank_dir+"/args.json", 'w') as fp:
     json.dump(args, fp, sort_keys=False, indent=4)
 
-
+print("Number of templates: ", len(templates))	
 
 def get_td_waveform_mp(args):
     hp, _ = get_td_waveform(mass1 = args[1], mass2 = args[2], spin1z = args[3], spin2z = args[4],
             approximant = approximant, f_lower = f_lower, delta_t = delta_t)
     #hp = hp.to_frequencyseries()
-    return hp
+    return hp.data
 
 def get_fd_waveform_mp(args):
     hp, _ = get_fd_waveform(mass1 = args[1], mass2 = args[2], spin1z = args[3], spin2z = args[4],
             approximant = approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)
     #hp = hp.to_frequencyseries()
-    return hp
+    return hp.data
 
 
 
@@ -128,8 +130,6 @@ for j in range(int(np.ceil(len(templates)/templates_per_file))):
     #with open(fname, 'r+b') as f:
     #    np.lib.format.write_array_header_1_0(f, header)
     np.save(fname, np.array(waveforms))
-
-    
 
     #np.savez(fname, *waveforms)
     savetime += time.time() - start

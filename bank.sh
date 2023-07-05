@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=generate_bank
+#SBATCH --job-name=bank_gen
 #SBATCH --output=generate_bank.log
 #SBATCH --cpus-per-task=20
 #SBATCH --time=04:00:00

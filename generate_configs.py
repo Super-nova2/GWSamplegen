@@ -43,6 +43,8 @@ import h5py
 import json
 import os
 
+import time
+
 from bilby.core.prior import (
     ConditionalPowerLaw,
     ConditionalPriorDict,
@@ -70,22 +72,22 @@ from typing import TYPE_CHECKING, Optional, Union
 seed = 8810235
 
 #number of CPUS to use
-n_cpus = 20
+n_cpus = 10
 
-project_dir = "./configs/test2"
+project_dir = "./configs/500_signal_500_noise"
 noise_dir = './noise/test'
-template_bank_dir = './template_banks/BNS_lowspin'
+template_bank_dir = './template_banks/BNS_lowspin_freqseries'
 
 #number of samples to generate
-n_signal_samples = 1000
-n_noise_samples = 1000
-
+n_signal_samples = 500
+n_noise_samples = 500
 
 approximant = "SpinTaylorT4"
 f_lower = 18
 delta_t = 1/2048
-#not sure waveform_length is needed
-#waveform_length = 1000
+
+#If possible, make waveform_lenth a power of 2. This reduces error between pycbc and tensorflow in the SNR calculation.
+waveform_length = 1024
 
 waveforms_per_file = 100
 
@@ -95,12 +97,13 @@ network_snr_threshold = 6
 detector_snr_threshold = 8
 
 #number of waveform templates to match with each waveform. These templates are taken from a distribution,
-#but the first template will be guaranteed to have a high overlap with the waveform.
+#but the first template chosen will be guaranteed to have a high overlap with the waveform.
 templates_per_waveform = 10
 
+template_approximant = "TaylorF2"
 #when we select templates to match with the waveform, we select from a distribution of templates, but have to ensure
-#that the template has at least some overlap with the waveform. for BBH signals you can use a width up to 5%-10%,
-#but for BNS signals you should use a width of 2% or less as they are more sensitive to chirp mass.
+#that the template has at least some overlap with the waveform. for BBH signals you can use a width up to 0.05-0.1,
+#but for BNS signals you should use a width of 0.02 or less as they are more sensitive to chirp mass.
 template_selection_width = 0.01
 
 ################################################
@@ -157,9 +160,10 @@ dec_max = 1.0
 d_prior = UniformComovingVolume
 
 d_min = 10.0
-d_max = 100
+d_max = 80
 
 #prior function for inclination. Should be Sine.
+#should be 0 <= inc_min <= inc_max <= 1.
 
 inc_prior = Sine
 
@@ -168,6 +172,7 @@ inc_max = 1.0
 
 #prior function for polarization. Should be Uniform.
 #Polarization is transformed from 0 <= x <= 1 to 0 <= x <= 2pi
+#should be 0 <= pol_min <= pol_max <= 1.
 
 pol_prior = Uniform
 
@@ -200,10 +205,12 @@ if not os.path.exists(template_bank_dir):
     raise ValueError("Template bank directory does not exist. Generate a template bank to use with this dataset.")
 
 #check that these parameters are compatible with those from the template bank directory
+#TODO: instead of checking for compatibility, generate the template param file here! add it to the config dir
+#since we're not saving templates any more.
 
 with open(template_bank_dir + '/args.json') as f:
     template_bank_args = json.load(f)
-    if template_bank_args['approximant'] != approximant:
+    if template_bank_args['approximant'] != template_approximant:
 
         print("""Warning: template bank approximant is {} but specified approximant is {}"""\
                          .format(template_bank_args['approximant'], approximant))
@@ -217,10 +224,53 @@ with open(template_bank_dir + '/args.json') as f:
                          .format(template_bank_args['delta_t'], delta_t))
 
 
-template_bank_params = np.load(template_bank_dir + '/params.npy')
-
 if not os.path.exists(project_dir):
     os.mkdir(project_dir)
+
+#ADDING TEMPLATE BANK GENERATION HERE
+
+tmass1_min = 1
+tmass1_max = 3
+
+tmass2_min = 1
+tmass2_max = 3
+
+q_min = 0.0
+q_max = 1.0
+
+#rather than selecting for spins, we scale the template spins by a factor. set to 0 for no spins, 1 for full spins
+spin_scale = 1
+
+#args = {'approximant': approximant,'f_lower': f_lower,'delta_t': delta_t, 'delta_f': delta_f, 'templates_per_file': templates_per_file,
+#        'mass1_min': mass1_min,'mass1_max': mass1_max,'mass2_min': mass2_min,'mass2_max': mass2_max,
+#        'q_min': q_min,'q_max': q_max}
+
+
+#templates are stored in the form: chirp mass, mass 1, mass 2, spin 1z, spin 2z
+templates = np.load("template_banks/GSTLal_templates.npy")
+
+#select only templates that are within the specified range
+
+templates = templates[(templates[:,1] >= tmass1_min) & (templates[:,1] <= tmass1_max) & (templates[:,2] >= tmass2_min) & 
+    (templates[:,2] <= tmass2_max) & (templates[:,2]/templates[:,1] >= q_min) & (templates[:,2]/templates[:,1] <= q_max)]
+
+templates[:,3] *= spin_scale
+templates[:,4] *= spin_scale
+
+#sort the templates by chirp mass
+templates = templates[templates[:,0].argsort()]
+
+#save the template waveform params and waveform generation args for future reference
+np.save(project_dir+"/template_params.npy",templates)
+
+
+#with open(main_dir+bank_dir+"/template_args.json", 'w') as fp:
+#    json.dump(args, fp, sort_keys=False, indent=4)
+
+print("Number of templates: ", len(templates))	
+
+
+template_bank_params = np.load(project_dir+"/template_params.npy")
 
 
 def constructPrior(
@@ -262,9 +312,16 @@ prior['pol'] = constructPrior(pol_prior, pol_min * np.pi *2, pol_max * np.pi *2)
 
 
 from utils.noise_utils import get_valid_noise_times
-gps, _, _ = get_valid_noise_times(noise_dir,1000)
+gps, _, _ = get_valid_noise_times(noise_dir,waveform_length)
 gps = np.random.permutation(gps)
 
+gps = np.repeat(gps,len(detectors),axis=0).reshape((len(gps),len(detectors)))
+#eventually handle timeslides, for now we just use the same GPS time for each ifo
+
+print(len(gps), "GPS times available")
+
+if len(gps) < (n_signal_samples + n_noise_samples):
+    raise ValueError("Not enough noise samples in noise directory. Generate more noise, or reduce the number of samples.")
 
 #load PSD from noise_dir
 
@@ -294,16 +351,7 @@ def get_projected_waveform_mp(args):
         f_plus, f_cross = all_detectors[detector].antenna_pattern(
             right_ascension=args['ra'], declination=args['dec'],
             polarization=args['pol'],
-            t_gps=args['gps'])
-        
-        #delta_t_h1 = all_detectors[detector].time_delay_from_detector(
-        #    other_detector=all_detectors['H1'],
-        #    right_ascension=args['ra'],
-        #    declination=args['dec'],
-        #    t_gps=args['gps'])
-        
-
-        #print(len(f_plus),len(f_cross),len(hp),len(hc))
+            t_gps=args['gps'][0])
         
         detector_signal = f_plus * hp + f_cross * hc
 
@@ -316,9 +364,6 @@ def get_projected_waveform_mp(args):
         detector_index = detectors.index(detector)
         waveforms[detector_index] = detector_signal
 
-        #waveforms[detector] = detector_signal
-        #print(snrs)
-
     return waveforms, snrs
 
 good_waveforms = []
@@ -328,6 +373,7 @@ generated_samples = 0
 
 iteration = 0
 
+wavetime = 0
 
 while generated_samples < n_signal_samples:
 
@@ -338,20 +384,24 @@ while generated_samples < n_signal_samples:
     #adding the gps times to the parameters
     p['gps'] = gps[:waveforms_per_file]
     gps = gps[waveforms_per_file:]
+    p['injection'] = np.ones(waveforms_per_file, dtype = bool)
     
+    #turn dict of lists into a list of dicts (for multiprocessing)
     params = [{key: p[key][i] for key in p.keys()} for i in range(len(p['mass1']))]
 
     
     #generate the waveforms
-
+    start = time.time()
     with mp.Pool(processes = n_cpus) as pool:
         mp_waveforms = pool.map(get_projected_waveform_mp, params)
         #mp_waveforms is a list of lists, where each list is [waveform, snrs]
 
         waveforms, snrs = zip(*mp_waveforms)
     
+    wavetime += time.time() - start
+    
     #save only the waveforms with network SNR above threshold.
-    #save in h5py files with associated parameters.
+    #save in numpy files with associated parameters.
 
     for i in range(len(waveforms)):
 
@@ -377,6 +427,8 @@ while generated_samples < n_signal_samples:
             good_params.append(params[i])
         else:
             print("discarding waveform with SNR " + str(network_snr))
+            #recycle gps time
+            gps = np.append(gps, [params[i]['gps']], axis = 0)
 
     if iteration == 0 and len(good_waveforms)/waveforms_per_file < 0.5:
         print("WARNING: check your priors and SNR threshold! Only " + str(len(good_waveforms)/waveforms_per_file) + 
@@ -393,27 +445,44 @@ while generated_samples < n_signal_samples:
         temp = good_waveforms[:waveforms_per_file]
         good_waveforms = good_waveforms[waveforms_per_file:]
         np.savez(fname, *temp)
-        
-        #f = h5py.File(fname,'w')
-        #for i in range(waveforms_per_file):
-        #    #create group for each waveform
-        #    x = f.create_group(str(i))
-        #    for detector in detectors:
-        #        x.create_dataset(detector, data = good_waveforms[i][detector])
-
-        #f.close()
 
         generated_samples += waveforms_per_file
         iteration +=1
 
 
-#save the parameters to a file
+#save the injection parameters to a file
 #convert from a list of dictionaries to a dictionary of lists
 
-good_params_dict = {key: [good_params[i][key] for i in range(len(good_params))] for key in good_params[0].keys()}
+good_params_dict = {key: [good_params[i][key] for i in range(len(good_params))][:n_signal_samples] for key in good_params[0].keys()}
 
+
+
+#generate noise samples. most of the parameters aren't used, but the masses are used to choose the templates.
+noise_p = prior.sample(n_noise_samples)
+noise_p['gps'] = gps[:n_noise_samples]
+noise_p['injection'] = np.zeros(n_noise_samples, dtype = bool)
+
+templates = []
+
+#TODO: get the actual max SNR for the noise segment maybe?
+noise_p['network_snr'] = np.zeros(n_noise_samples)
+for detector in detectors:
+    noise_p[detector + '_snr'] = np.zeros(n_noise_samples)
+
+for i in range(n_noise_samples):
+    if noise_p['mass2'][i] > noise_p['mass1'][i]:
+        noise_p['mass1'][i], noise_p['mass2'][i] = noise_p['mass2'][i], noise_p['mass1'][i]
+
+    params = {key: noise_p[key][i] for key in noise_p.keys()}
+    templates.append(choose_templates(template_bank_params, params, templates_per_waveform, template_selection_width))
+
+noise_p['template_waveforms'] = np.array(templates)
+
+for key in good_params_dict.keys():
+    good_params_dict[key] = np.append(good_params_dict[key], noise_p[key], axis = 0)
+
+#np.save(project_dir+"/"+"noise_params.npy", noise_p)
 np.save(project_dir+"/"+"params.npy", good_params_dict)
-
 
 #save the arguments used to generate the parameters to a file
 
@@ -454,4 +523,8 @@ args = {"n_signal_samples": n_signal_samples,
             "pol_min": pol_min,
             "pol_max": pol_max}
 
-json.save(args, project_dir+"/"+"args.json")
+#save args
+with open(project_dir+"/"+"args.json", 'w') as f:
+    json.dump(args, f, sort_keys=False, indent=4)
+
+print("finished generating waveforms. time taken: " + str(wavetime/60) + " minutes")

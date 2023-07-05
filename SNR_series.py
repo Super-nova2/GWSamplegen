@@ -11,7 +11,14 @@ from pycbc.types.timeseries import TimeSeries
 from utils.SNR_utils import array_matched_filter, tf_get_cutoff_indices
 import tensorflow as tf
 
+import asyncio
 import multiprocessing as mp
+
+
+#Ideas for speedup:
+#smaller sized template bank files. not sure this is necessary since we are using a memmap
+#do ALL tf operations on GPU, including converting the templates to tensors.
+
 
 #defining some configs. some of these need to come from config files in the future.
 duration = 1024
@@ -30,17 +37,17 @@ fname = 'test.npy'
 
 config_dir = "./configs/test2"
 noise_dir = "./noise/test"
-template_dir = "./template_banks/BNS_lowspin"
+template_dir = "./template_banks/BNS_lowspin_freqseries"
 
 waveforms_per_file = 100
 templates_per_file = 1000
 
 samples_per_batch = 10
-samples_per_file = 100
+samples_per_file = 500
 
 
 
-real_offset = np.min((offset*sample_rate, duration//2))
+offset = np.min((offset*sample_rate, duration//2))
 
 
 ###################################################load noise segments
@@ -76,7 +83,7 @@ for i in range(len(ifos)):
 
 
 #create an array on disk that we will save the samples to.
-fp = np.memmap(config_dir + "/" + fname, dtype=np.complex128, mode='w+', 
+fp = np.memmap(config_dir + "/" + fname, dtype=np.complex64, mode='w+', 
                shape=(len(ifos),n_templates*samples_per_file, (seconds_before + seconds_after)*sample_rate), offset=128)
 
 detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
@@ -95,6 +102,22 @@ SNR_time = 0
 convert_time = 0
 repeat_time = 0
 
+def read_file_mp(args):
+	temp = np.load(template_dir + "/" + str(args[0]) +".npy", mmap_mode='r')
+	return np.copy(temp[args[1]][kmin:kmax])
+
+pool = mp.Pool(processes = 10)
+
+def read_file_mp2(args):
+	file_idx, template_ids, i = args
+	temp = np.load(template_dir + "/"+ str(file_idx) +".npy", mmap_mode='r')
+	ret = []
+	for id in template_ids:
+		ret.append(np.copy(temp[id][kmin:kmax]))
+	return (ret,i)
+
+
+
 for n in range(0,samples_per_file, samples_per_batch):
 
 	#load this batch's templates
@@ -104,8 +127,37 @@ for n in range(0,samples_per_file, samples_per_batch):
 
 	t_templates = []
 
+	start = time.time()
+	#for i in range(n_templates * samples_per_batch):
+	#	temp = np.load(template_dir + "/"+ str(file_idx[i]) +".npy",mmap_mode='r')
+	#	#x = np.load("template_banks/test2/0.npy",mmap_mode='r')
+	#	t_templates.append(np.copy(temp[template_idx[i]][kmin:kmax]))
 	
 
+	
+	t_templates = pool.map(read_file_mp, [(file_idx[i],template_idx[i],i) for i in range(len(file_idx))])
+
+
+	#files = np.unique(file_idx)
+	#pool = mp.Pool(processes = 10)    
+
+	#results = pool.map(read_file_mp2, [(file, template_idx[file == file_idx], np.where(file == file_idx)[0]) for file in files])
+	#t_templates = np.zeros((samples_per_batch * n_templates,kmax-kmin), dtype = np.complex128)
+
+	#for result in results:
+	#	for i in range(len(result[0])):
+	#		t_templates[result[1][i]] = result[0][i]
+
+	template_load_time += time.time() - start
+
+	#start = time.time()
+	#t_templates = np.array(t_templates)
+	#with tf.device('/GPU:0'):
+	#t_templates = tf.convert_to_tensor(np.array(t_templates))
+	#t_templates = tf.stack(t_templates)
+	#template_time += time.time() - start
+	
+	"""
 	for i in range(n_templates * samples_per_batch):
 		with np.load(template_dir + "/"+ str(file_idx[i]) +".npz") as data:
 			start = time.time()
@@ -115,13 +167,15 @@ for n in range(0,samples_per_file, samples_per_batch):
 
 			start = time.time()
 			template = TimeSeries(template, delta_t=delta_t).to_frequencyseries(delta_f=delta_f)
-			template_time += time.time() - start
+			
 			
 			template = tf.convert_to_tensor(template)
 			template = tf.slice(template, begin=[kmin], size=[kmax-kmin])
 			t_templates.append(template)
-
+			template_time += time.time() - start
+ 	
 	t_templates = tf.stack(t_templates)
+	"""
 
 	#template_time += time.time() - start
 
@@ -163,15 +217,33 @@ for n in range(0,samples_per_file, samples_per_batch):
 	
 
 	for ifo in ifos:
-		start = time.time()
-		strain = [TimeSeries(strains[ifo][i], delta_t=delta_t) for i in range(samples_per_batch)]
-		strain = [highpass(i,f_lower).to_frequencyseries(delta_f=delta_f).data for i in strain]
-		waveform_time += time.time() - start
 
-		strain = np.array(strain)
 		with tf.device('/GPU:0'):
+
 			start = time.time()
-			strain = tf.convert_to_tensor(strain[:,kmin:kmax])
+			strain = [TimeSeries(strains[ifo][i], delta_t=delta_t) for i in range(samples_per_batch)]
+			#strain = [highpass(i,f_lower).to_frequencyseries(delta_f=delta_f).data for i in strain]
+			strain = [highpass(i,f_lower).data for i in strain]
+
+			tlen = int(1/delta_f / delta_t)
+			tmp = np.zeros((samples_per_batch, tlen), dtype = np.complex128)
+			tmp[:,:len(strain[0])] = np.array(strain)
+			tmp = tf.convert_to_tensor(tmp)
+			strain = tf.signal.fft(tmp)* delta_t
+			#strain = tf.convert_to_tensor(strain[:,:len(strain)//2+1][:,kmin:kmax], dtype = tf.complex128)
+			strain = strain[:,:strain.shape[1]//2+1][:,kmin:kmax]
+			print(strain.shape)
+			waveform_time += time.time() - start
+
+			#strain = np.array(strain)
+
+			if ifo == 'H1':
+				start = time.time()
+				t_templates = tf.convert_to_tensor(t_templates)
+				template_time += time.time() - start
+
+			start = time.time()
+			#strain = tf.convert_to_tensor(strain[:,kmin:kmax])
 			convert_time += time.time() - start
 			start = time.time()
 			strain = tf.repeat(strain, n_templates, axis=0)
@@ -195,11 +267,15 @@ for n in range(0,samples_per_file, samples_per_batch):
 
 print("template time:", template_time)
 print("template load time:", template_load_time)
-print("waveform time:", waveform_time)
+print("waveform time (plus convert):", waveform_time)
 print("SNR time:", SNR_time)
 print("convert time:", convert_time)
 print("repeat time:", repeat_time)
 print("total time:", time.time() - allstart)
+
+
+t_time = time.time() - allstart
+print("it would take ", (25000 * t_time/samples_per_file)/3600, "hours to process 25000 samples.")
 
 #snrlist = []
 
@@ -220,3 +296,4 @@ header = np.lib.format.header_data_from_array_1_0(fp)
 with open(config_dir + "/" + fname, 'r+b') as f:
 	np.lib.format.write_array_header_1_0(f, header)
 
+pool.close()

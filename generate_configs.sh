@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=generate_configs
 #SBATCH --output=generate_configs.log
-#SBATCH --cpus-per-task=30
-#SBATCH --time=00:10:00
-#SBATCH --mem=50gb
+#SBATCH --cpus-per-task=10
+#SBATCH --time=02:30:00
+#SBATCH --mem=20gb
 
 module load gcc/10.3.0
 module load python/3.9.5

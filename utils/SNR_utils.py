@@ -156,5 +156,7 @@ def array_matched_filter(sample, template, psd, N, kmin, kmax, duration, delta_t
         #snr_ts = sample_template_correlated_rescaled_padded_ts * template_norm
         snr_ts = sample_template_correlated * template_norm
 
+        snr_ts = tf.cast(snr_ts, dtype=tf.dtypes.complex128)
+
         return snr_ts
     

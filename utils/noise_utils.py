@@ -131,20 +131,27 @@ def load_noise(noise_dir):
 def fetch_noise_loaded(    
 	noise_list: List[np.ndarray],
 	noise_len: int,
-	noise_start_time: int,
+	noise_start_time: List[int],
 	sample_rate: int,
 	paths: np.ndarray
-) -> List[float]:
-	
-	#fetch from a directory of noise files an array of noise for sample generation
+) -> np.ndarray[float]:
 
-	noises = np.empty(shape = (2,noise_len*sample_rate))
-	f_idx = np.searchsorted(paths[:,1].astype('int'), noise_start_time,side='right') -1
+	"""Fetch an array of noise segments from a list of noise files.
+	Supports timeslides by taking a list of start times.
 	
-	start_idx = int((noise_start_time - paths[f_idx,1].astype('int')))*sample_rate
+	noise_list: list of noise files loaded into memory
+	noise_len: length of noise segment to fetch
+	noise_start_time: list of start times for noise segments
+	sample_rate: sample rate of noise
+	paths: array of noise file paths"""
 
-	noises = np.copy(noise_list[f_idx][:,start_idx:start_idx + noise_len * sample_rate])
+	noises = np.empty(shape = (len(noise_start_time),noise_len*sample_rate))
 	
+	for i in range(len(noise_start_time)):
+		f_idx = np.searchsorted(paths[:,1].astype('int'), noise_start_time[i],side='right') -1
+		start_idx = int((noise_start_time[i] - paths[f_idx,1].astype('int')))*sample_rate
+		noises[i] = np.copy(noise_list[f_idx][i,start_idx:start_idx + noise_len * sample_rate])
+
 	return noises
 
 
