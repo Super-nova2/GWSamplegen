@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=SNR_gen
 #SBATCH --output=generate_SNR.log
-#SBATCH --cpus-per-task=10
-#SBATCH --time=00:40:00
-#SBATCH --mem=80gb
+#SBATCH --cpus-per-task=20
+#SBATCH --time=10:00:00
+#SBATCH --mem=200gb
 #SBATCH --gres=gpu:1
 
 module load gcc/10.3.0
@@ -15,4 +15,8 @@ source /fred/oz016/alistair/nt_env/bin/activate
 cd "/fred/oz016/alistair/GWSamplegen"
 
 #python SNR_series.py
+#python generate_configs.py
+
+echo done
+
 python asyncSNR.py

@@ -149,7 +149,8 @@ def fetch_noise_loaded(
 	
 	for i in range(len(noise_start_time)):
 		f_idx = np.searchsorted(paths[:,1].astype('int'), noise_start_time[i],side='right') -1
-		start_idx = int((noise_start_time[i] - paths[f_idx,1].astype('int')))*sample_rate
+		#to be able to fetch noise from ANY time, not just in integer steps, include sample_rate in the int()
+		start_idx = int((noise_start_time[i] - paths[f_idx,1].astype('int'))*sample_rate)
 		noises[i] = np.copy(noise_list[f_idx][i,start_idx:start_idx + noise_len * sample_rate])
 
 	return noises

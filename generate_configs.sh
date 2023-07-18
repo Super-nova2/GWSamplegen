@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=generate_configs
 #SBATCH --output=generate_configs.log
-#SBATCH --cpus-per-task=10
-#SBATCH --time=02:30:00
+#SBATCH --cpus-per-task=20
+#SBATCH --time=04:00:00
 #SBATCH --mem=20gb
 
 module load gcc/10.3.0

@@ -40,9 +40,9 @@ offset = 0
 
 fname = 'test.npy'
 
-config_dir = "./configs/500_signal_500_noise"
+config_dir = "./configs/50k_signoise_8SNR_noglitches"
 noise_dir = "./noise/test"
-template_dir = "./template_banks/BNS_lowspin_freqseries"
+#template_dir = "./template_banks/BNS_lowspin_freqseries"
 
 waveforms_per_file = 100
 templates_per_file = 1000
@@ -50,11 +50,11 @@ templates_per_file = 1000
 #samples_per_batch is limited by how many samples we can fit into a 2 Gb tensor
 #mp_batch is limited by the amount of memory available.
 
-samples_per_batch = 10
-samples_per_file = 1000
+samples_per_batch = 100
+samples_per_file = 50000
 
 mp_batch = 10
-n_cpus = 10
+n_cpus = 20
 
 offset = np.min((offset*sample_rate, duration//2))
 
@@ -68,7 +68,7 @@ template_ids = np.array(params['template_waveforms'])
 gps = params['gps']
 n_templates = len(template_ids[0])
 
-templates = np.load(template_dir + "/params.npy")
+templates = np.load(config_dir + "/template_params.npy")
 
 #Damon's definition of N. from testing, it's just the total length of the segment in samples
 #N = (len(sample1)-1) * 2
@@ -114,19 +114,19 @@ SNR_time = 0
 convert_time = 0
 repeat_time = 0
 
-def read_file_mp(args):
-	temp = np.load(template_dir + "/" + str(args[0]) +".npy", mmap_mode='r')
-	return np.copy(temp[args[1]][kmin:kmax])
+#def read_file_mp(args):
+#	temp = np.load(template_dir + "/" + str(args[0]) +".npy", mmap_mode='r')
+#	return np.copy(temp[args[1]][kmin:kmax])
 
 #pool = mp.Pool(processes = 10)
 
-def read_file_mp2(args):
-	file_idx, template_ids, i = args
-	temp = np.load(template_dir + "/"+ str(file_idx) +".npy", mmap_mode='r')
-	ret = []
-	for id in template_ids:
-		ret.append(np.copy(temp[id][kmin:kmax]))
-	return (ret,i)
+#def read_file_mp2(args):
+#	file_idx, template_ids, i = args
+#	temp = np.load(template_dir + "/"+ str(file_idx) +".npy", mmap_mode='r')
+#	ret = []
+#	for id in template_ids:
+#		ret.append(np.copy(temp[id][kmin:kmax]))
+#	return (ret,i)
 
 #def get_fd_waveform(args):
 #    return get_fd_waveform(mass1 = args[1], mass2 = args[2], spin1z = args[3], spin2z = args[4],

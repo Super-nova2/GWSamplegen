@@ -7,6 +7,18 @@ import json
 def chirp_mass(m1,m2):
     return ((m1 * m2)**0.6)/ (m1 + m2)**0.2
 
+def t_at_f(m1,m2,f):
+	top = 5 * ((3e8)**5) * (((m1+m2)*2e30)**(1/3))
+	bottom = (f**(8/3))*256*(np.pi**(8/3)) * ((6.67e-11)**(5/3)) *m1*m2 * 2e30 * 2e30
+	
+	return (top/bottom)
+
+def f_at_t(m1,m2,t):
+    top = 5 * ((3e8)**5) * (((m1+m2)*2e30)**(1/3))
+    bottom = t*256*(np.pi**(8/3)) * ((6.67e-11)**(5/3)) *m1*m2 * 2e30 * 2e30
+    
+    return (top/bottom)**(3/8)
+
 def errfunc(mass1,mass2,m1true,m2true):
     #function for choosing a template which will produce a good match between the template and true waveform
 
@@ -32,7 +44,7 @@ def choose_templates(template_bank_params, waveform_params, templates_per_wavefo
 
     x = np.arange(low_idx, high_idx)
 
-    print(waveform_params['mass1'],waveform_params['mass2'],np.min(x),np.max(x),best_template)
+    #print(waveform_params['mass1'],waveform_params['mass2'],np.min(x),np.max(x),best_template)
 
     # Sigma values for the two sides of the split distribution
     # Here, the 2 refers to the number of standard deviations either side of the peak
