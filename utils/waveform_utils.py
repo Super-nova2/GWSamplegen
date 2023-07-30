@@ -69,6 +69,7 @@ def choose_templates(template_bank_params, waveform_params, templates_per_wavefo
     #we instead use the pdf from only one side.
 
     if scale1 == np.inf or np.isnan(scale1):
+        print("Left PDF is nan, using right PDF")
         if len(x) < templates_per_waveform:
             x = np.arange(len(template_bank_params)-templates_per_waveform,len(template_bank_params)-1)
         else:

@@ -40,7 +40,7 @@ offset = 0
 
 fname = 'test.npy'
 
-config_dir = "./configs/50k_signoise_8SNR_noglitches"
+config_dir = "./configs/rectest"
 noise_dir = "./noise/test"
 #template_dir = "./template_banks/BNS_lowspin_freqseries"
 
@@ -51,8 +51,9 @@ templates_per_file = 1000
 #mp_batch is limited by the amount of memory available.
 
 samples_per_batch = 100
-samples_per_file = 50000
+samples_per_file = 1000
 
+#number of batches to process in parallel
 mp_batch = 10
 n_cpus = 20
 
@@ -83,6 +84,8 @@ psd = np.load(noise_dir + "/psd.npy")
 #since psd[0] is the sample frequencies, and the first frequency is always 0 Hz, psd[0][1] is sample frequency
 psds = {}
 
+import matplotlib.pyplot as plt
+
 for i in range(len(ifos)):
 	psds[ifos[i]] = FrequencySeries(psd[i+1], delta_f = psd[0][1], dtype = np.complex128)
 	psds[ifos[i]] = interpolate(psds[ifos[i]], delta_f= 1/(duration))
@@ -90,8 +93,12 @@ for i in range(len(ifos)):
 	#is used when creating the PSD.
 	psds[ifos[i]] = inverse_spectrum_truncation(psds[ifos[i]], int(4 * sample_rate),
 									low_frequency_cutoff=f_lower)
+	plt.loglog(psds[ifos[i]].sample_frequencies[18500:], psds[ifos[i]][18500:])
+	    
 	psds[ifos[i]] = tf.convert_to_tensor(psds[ifos[i]], dtype=tf.complex128)
 	psds[ifos[i]] = tf.slice(psds[ifos[i]], begin=[kmin], size=[kmax-kmin])
+	
+plt.savefig("psd.png")
 
 
 #create an array on disk that we will save the samples to.
@@ -146,8 +153,10 @@ def run_batch(n):
 	
 	for i in range(n_templates * samples_per_batch):
 		t_templates[i] = get_fd_waveform(mass1 = batch_template_params[i,1], mass2 = batch_template_params[i,2], 
-		  				spin1z = batch_template_params[i,3], spin2z = batch_template_params[i,4],
-            			approximant = approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)[0].data[kmin:kmax]
+				   		spin1z = 0, spin2z = 0,
+						approximant = approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)[0].data[kmin:kmax]
+		  				#spin1z = batch_template_params[i,3], spin2z = batch_template_params[i,4],
+            			
 
 	
 	#for i in range(n_templates * samples_per_batch):
@@ -169,7 +178,7 @@ def run_batch(n):
 		strains[ifo] = np.zeros((samples_per_batch, duration*sample_rate))
 
 	for i in range(samples_per_batch):
-		print("sample:", n+i)
+		print("sample:", n+i, "template", t_ids[i])
 		noise = fetch_noise_loaded(segments,duration,gps[n+i],sample_rate,paths)
 
 		if params["injection"][n+i]:

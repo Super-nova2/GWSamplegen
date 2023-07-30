@@ -26,7 +26,6 @@
 #TODO params to add:
 #SEEDS
 #waveform length?
-# H1_glitch/L1_glitch, etc: ifo-specific bools to determine if a glitch is to be injected into this waveform
 
 #Other params that probably should be added in a DIFFERENT file:
 #seconds before + after merger to slice SNR timeseries
@@ -70,22 +69,22 @@ from typing import TYPE_CHECKING, Optional, Union
 
 #seed for reproducibility
 
-seed = 8810235
+seed = 8810236
 
 #number of CPUS to use
 n_cpus = 20
 
-project_dir = "./configs/50k_signoise_8SNR_noglitches"
+project_dir = "./configs/rectest"
 noise_dir = './noise/test'
 #template_bank_dir = './template_banks/BNS_lowspin_freqseries'
 
 #number of samples to generate
-n_signal_samples = 25000
-n_noise_samples = 25000
+n_signal_samples = 1000
+n_noise_samples = 0
 
 #n_samples = 10000
 #noise_frac = 0.5
-glitch_frac = 0.25
+glitch_frac = 0
 
 
 approximant = "SpinTaylorT4"
@@ -335,8 +334,8 @@ psd = np.load(noise_dir + "/psd.npy")
 from pycbc.types import FrequencySeries
 
 psds = {}
-psds["H1"] = FrequencySeries(psd[1], delta_f = 1.0/psd.shape[0], dtype = np.complex128)
-psds["L1"] = FrequencySeries(psd[2], delta_f = 1.0/psd.shape[0], dtype = np.complex128)
+psds["H1"] = FrequencySeries(psd[1], delta_f = 1.0/psd[0][1], dtype = np.complex128)
+psds["L1"] = FrequencySeries(psd[2], delta_f = 1.0/psd[0][1], dtype = np.complex128)
 
 
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
