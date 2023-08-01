@@ -69,7 +69,7 @@ from typing import TYPE_CHECKING, Optional, Union
 
 #seed for reproducibility
 
-seed = 8810236
+seed = 8810237
 
 #number of CPUS to use
 n_cpus = 20
@@ -79,8 +79,8 @@ noise_dir = './noise/test'
 #template_bank_dir = './template_banks/BNS_lowspin_freqseries'
 
 #number of samples to generate
-n_signal_samples = 1000
-n_noise_samples = 0
+n_signal_samples = 50000
+n_noise_samples = 50000
 
 #n_samples = 10000
 #noise_frac = 0.5
@@ -94,7 +94,7 @@ delta_t = 1/2048
 #If possible, make waveform_lenth a power of 2. This reduces error between pycbc and tensorflow in the SNR calculation.
 waveform_length = 1024
 
-waveforms_per_file = 100
+waveforms_per_file = 1000
 
 detectors = ['H1','L1']
 
@@ -164,8 +164,8 @@ dec_max = 1.0
 
 d_prior = UniformSourceFrame
 
-d_min = 5.0
-d_max = 70.0
+d_min = 10.0
+d_max = 100.0
 
 #prior function for inclination. Should be Sine.
 #should be 0 <= inc_min <= inc_max <= 1.
@@ -314,7 +314,7 @@ prior['pol'] = constructPrior(pol_prior, pol_min * np.pi *2, pol_max * np.pi *2)
 
 
 
-from utils.noise_utils import get_valid_noise_times
+from utils.noise_utils import get_valid_noise_times, load_psd
 valid_times, _, _ = get_valid_noise_times(noise_dir,waveform_length)
 #gps = np.random.permutation(gps)
 
@@ -333,10 +333,10 @@ psd = np.load(noise_dir + "/psd.npy")
 
 from pycbc.types import FrequencySeries
 
-psds = {}
-psds["H1"] = FrequencySeries(psd[1], delta_f = 1.0/psd[0][1], dtype = np.complex128)
-psds["L1"] = FrequencySeries(psd[2], delta_f = 1.0/psd[0][1], dtype = np.complex128)
-
+#psds = {}
+#psds["H1"] = FrequencySeries(psd[1], delta_f = 1.0/psd[0][1], dtype = np.complex128)
+#psds["L1"] = FrequencySeries(psd[2], delta_f = 1.0/psd[0][1], dtype = np.complex128)
+psds = load_psd(noise_dir, waveform_length, detectors, f_lower, int(1/delta_t))
 
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
@@ -348,7 +348,7 @@ def get_projected_waveform_mp(args):
                              approximant = approximant, f_lower = f_lower, delta_t = delta_t)
     
     snrs = {}
-    waveforms = np.empty(shape=(len(detectors), len(hp)))
+    #waveforms = np.empty(shape=(len(detectors), len(hp)))
 
     for detector in detectors:
         f_plus, f_cross = all_detectors[detector].antenna_pattern(
@@ -364,12 +364,13 @@ def get_projected_waveform_mp(args):
         
         snrs[detector] = snr
 
-        detector_index = detectors.index(detector)
-        waveforms[detector_index] = detector_signal
+        #detector_index = detectors.index(detector)
+        #waveforms[detector_index] = detector_signal
 
-    return waveforms, snrs
+    return snrs #waveforms, snrs
 
-good_waveforms = []
+#good_waveforms = []
+
 good_params = []
 
 generated_samples = 0
@@ -470,23 +471,25 @@ while generated_samples < n_signal_samples:
     #generate the waveforms
     start = time.time()
     with mp.Pool(processes = n_cpus) as pool:
-        mp_waveforms = pool.map(get_projected_waveform_mp, params)
-        #mp_waveforms is a list of lists, where each list is [waveform, snrs]
 
-        waveforms, snrs = zip(*mp_waveforms)
+        #snrs is a list of dicts, where each dict is {detector: snr}
+        snrs = pool.map(get_projected_waveform_mp, params)
+        #mp_waveforms is a list of lists, where each list is [waveform, snrs]
+        
+        #waveforms, snrs = zip(*mp_waveforms)
     
     wavetime += time.time() - start
     
     #save only the waveforms with network SNR above threshold.
     #save in numpy files with associated parameters.
 
-    for i in range(len(waveforms)):
+    for i in range(len(snrs)):
 
         network_snr = np.sqrt(sum([snrs[i][detector]**2 for detector in snrs[i]]))
 
         if network_snr > network_snr_threshold and all([snr > detector_snr_threshold for snr in snrs[i].values()]):
             #this sample is suitable, get it ready for saving
-            good_waveforms.append(waveforms[i])
+            #good_waveforms.append(waveforms[i])
 
             #add the detector SNRs and network SNR as keys in params[i]
             params[i]['network_snr'] = network_snr
@@ -507,26 +510,33 @@ while generated_samples < n_signal_samples:
         #    #recycle gps time
         #    #gps = np.append(gps, [params[i]['gps']], axis = 0)
 
-    if iteration == 0 and len(good_waveforms)/waveforms_per_file < 0.5:
-        print("WARNING: check your distance prior and SNR threshold! Only " + str(len(good_waveforms)/waveforms_per_file) + 
-              " of the samples meet the SNR threshold.")
-    elif iteration == 0:
-        print("SNR threshold looks good, {}% of samples meet the threshold.".format(len(good_waveforms)/waveforms_per_file*100))
+    #if iteration == 0 and len(good_waveforms)/waveforms_per_file < 0.5:
+    #    print("WARNING: check your distance prior and SNR threshold! Only " + str(len(good_waveforms)/waveforms_per_file) + 
+    #          " of the samples meet the SNR threshold.")
+    #elif iteration == 0:
+    #    print("SNR threshold looks good, {}% of samples meet the threshold.".format(len(good_waveforms)/waveforms_per_file*100))
     
     #now that we only have the good waveforms, we can save them to file.
     #we don't necessarily have waveforms_per_file samples in good_waveforms, so we need to check that.
 
-    if len(good_waveforms) > waveforms_per_file:
-        fname = project_dir+"/"+str(iteration*waveforms_per_file)+".npz"
+    #if len(good_waveforms) > waveforms_per_file:
+    #    fname = project_dir+"/"+str(iteration*waveforms_per_file)+".npz"
 
-        print(fname)
+    #    print(fname)
 
-        temp = good_waveforms[:waveforms_per_file]
-        good_waveforms = good_waveforms[waveforms_per_file:]
-        np.savez(fname, *temp)
+    #    temp = good_waveforms[:waveforms_per_file]
+    #    good_waveforms = good_waveforms[waveforms_per_file:]
+    #    np.savez(fname, *temp)
 
-        generated_samples += waveforms_per_file
-        iteration +=1
+    #    generated_samples += waveforms_per_file
+    #    iteration +=1
+    generated_samples = len(good_params)
+    if generated_samples <= waveforms_per_file:
+        if generated_samples/waveforms_per_file < 0.5:
+            print("WARNING: check your distance prior and SNR threshold! Only {}% of the samples meet the SNR threshold."\
+                  .format(round(generated_samples/waveforms_per_file*100)))
+        else:
+            print("SNR threshold looks good, {}% of samples meet the threshold.".format(round(generated_samples/waveforms_per_file*100)))
 
 
 
@@ -617,7 +627,8 @@ args = {"n_signal_samples": n_signal_samples,
             "inc_max": inc_max,
             "pol_prior": pol_prior.__name__,
             "pol_min": pol_min,
-            "pol_max": pol_max}
+            "pol_max": pol_max,
+            "seed":seed}
 
 #save args
 with open(project_dir+"/"+"args.json", 'w') as f:

@@ -4,6 +4,8 @@ from typing import Iterator, List, Optional, Sequence, Tuple
 import h5py
 import matplotlib.pyplot as plt
 from pycbc.types.timeseries import TimeSeries
+from pycbc.types import FrequencySeries
+from pycbc.psd import interpolate, inverse_spectrum_truncation
 
 import time
 #length of noise the waveform is injected into. for BNS, I use 1000 seconds
@@ -313,3 +315,20 @@ def get_noise_PSD(
 
 	#return ifo_psds
 	np.save(os.path.dirname(noise_paths[0]) + "/psd.npy", ifo_psds)
+
+def load_psd(
+		noise_dir: str,
+		duration: int,
+		ifos: List[str],
+		f_lower: int,
+		sample_rate: int
+):
+	psd = np.load(noise_dir + "/psd.npy")
+	psds = {}
+	for i in range(len(ifos)):
+		psds[ifos[i]] = FrequencySeries(psd[i+1], delta_f = psd[0][1], dtype = np.complex128)
+		psds[ifos[i]] = interpolate(psds[ifos[i]], delta_f= 1/(duration))
+		psds[ifos[i]] = inverse_spectrum_truncation(psds[ifos[i]], int(4 * sample_rate),
+										low_frequency_cutoff=f_lower)
+		
+	return psds

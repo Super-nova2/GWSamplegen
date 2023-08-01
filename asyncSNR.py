@@ -2,7 +2,7 @@ import os
 import numpy as np
 from typing import Iterator, List, Optional, Sequence, Tuple
 from pycbc.filter import highpass, lowpass
-from utils.noise_utils import get_valid_noise_times, load_noise, fetch_noise_loaded
+from utils.noise_utils import get_valid_noise_times, load_noise, fetch_noise_loaded, load_psd
 #rom pycbc.filter import matched_filter
 from pycbc.detector import Detector
 from pycbc.psd import interpolate, inverse_spectrum_truncation
@@ -31,6 +31,7 @@ f_lower = 18.0
 delta_f = 1/duration
 f_final = duration
 approximant = 'TaylorF2'
+td_approximant = "SpinTaylorT4"
 
 ifos = ['H1', 'L1']
 
@@ -44,17 +45,17 @@ config_dir = "./configs/rectest"
 noise_dir = "./noise/test"
 #template_dir = "./template_banks/BNS_lowspin_freqseries"
 
-waveforms_per_file = 100
-templates_per_file = 1000
+#waveforms_per_file = 100
+#templates_per_file = 1000
 
 #samples_per_batch is limited by how many samples we can fit into a 2 Gb tensor
 #mp_batch is limited by the amount of memory available.
 
 samples_per_batch = 100
-samples_per_file = 1000
+samples_per_file = 100000
 
 #number of batches to process in parallel
-mp_batch = 10
+mp_batch = 20
 n_cpus = 20
 
 offset = np.min((offset*sample_rate, duration//2))
@@ -93,19 +94,19 @@ for i in range(len(ifos)):
 	#is used when creating the PSD.
 	psds[ifos[i]] = inverse_spectrum_truncation(psds[ifos[i]], int(4 * sample_rate),
 									low_frequency_cutoff=f_lower)
-	plt.loglog(psds[ifos[i]].sample_frequencies[18500:], psds[ifos[i]][18500:])
+	#plt.loglog(psds[ifos[i]].sample_frequencies[18500:], psds[ifos[i]][18500:])
 	    
 	psds[ifos[i]] = tf.convert_to_tensor(psds[ifos[i]], dtype=tf.complex128)
 	psds[ifos[i]] = tf.slice(psds[ifos[i]], begin=[kmin], size=[kmax-kmin])
 	
-plt.savefig("psd.png")
+#plt.savefig("psd.png")
 
 
 #create an array on disk that we will save the samples to.
 fp = np.memmap(config_dir + "/" + fname, dtype=np.complex64, mode='w+', 
                shape=(len(ifos),n_templates*samples_per_file, (seconds_before + seconds_after)*sample_rate), offset=128)
 
-detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
+#detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
 ##################################################calculate the SNR
 
@@ -139,7 +140,30 @@ repeat_time = 0
 #    return get_fd_waveform(mass1 = args[1], mass2 = args[2], spin1z = args[3], spin2z = args[4],
 #            approximant = approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)[0].data
 
+from pycbc.waveform import get_td_waveform
+all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
+def get_projected_waveform_mp(args):
+    
+    hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
+                             spin1z = args['spin1z'], spin2z = args['spin2z'],
+                             inclination = args['i'], distance = args['d'],
+                             approximant = td_approximant, f_lower = f_lower, delta_t = delta_t)
+    
+    waveforms = np.empty(shape=(len(ifos), len(hp)))
+
+    for detector in ifos:
+        f_plus, f_cross = all_detectors[detector].antenna_pattern(
+            right_ascension=args['ra'], declination=args['dec'],
+            polarization=args['pol'],
+            t_gps=args['gps'][0])
+        
+        detector_signal = f_plus * hp + f_cross * hc
+
+        detector_index = ifos.index(detector)
+        waveforms[detector_index] = detector_signal
+
+    return waveforms
 
 def run_batch(n):
 	#file_idx = templates_per_file * (np.ravel(template_ids[n:n+samples_per_batch])//templates_per_file)
@@ -167,12 +191,13 @@ def run_batch(n):
 
 	#t_templates = tf.convert_to_tensor(t_templates, dtype=tf.complex128)
 	
-	file_idx = waveforms_per_file * (np.arange(n,n+samples_per_batch)//waveforms_per_file)
-	waveform_idx = np.arange(n,n+samples_per_batch) % waveforms_per_file
+	#file_idx = waveforms_per_file * (np.arange(n,n+samples_per_batch)//waveforms_per_file)
+	#waveform_idx = np.arange(n,n+samples_per_batch) % waveforms_per_file
 
 	#start = time.time()
 
 	#create this batch's strains
+	#TODO: optimise memory usage. we're creating the waveform and strain arrays separately, which is inefficient.
 	strains = {}
 	for ifo in ifos:
 		strains[ifo] = np.zeros((samples_per_batch, duration*sample_rate))
@@ -183,16 +208,24 @@ def run_batch(n):
 
 		if params["injection"][n+i]:
 			#TODO: speed up file loading, as the batch's waveforms should be in 1 or 2 files.
-			with np.load(config_dir + "/"+str(file_idx[i])+".npz") as data:
+			#with np.load(config_dir + "/"+str(file_idx[i])+".npz") as data:
 
-				temp = data['arr_'+str(waveform_idx[i])]
+			#	temp = data['arr_'+str(waveform_idx[i])]
+			
+			args = {'mass1': params['mass1'][n+i], 'mass2': params['mass2'][n+i],
+	   				'spin1z': params['spin1z'][n+i], 'spin2z': params['spin2z'][n+i],	
+					'i': params['i'][n+i], 'd': params['d'][n+i],
+					'ra': params['ra'][n+i], 'dec': params['dec'][n+i],
+					'pol': params['pol'][n+i], 'gps': params['gps'][n+i]}
+			
+			temp = get_projected_waveform_mp(args)
 						
 			#changed temp to temp[i]
 			for ifo in ifos:
 				#this shouldn't be used, waveforms should be shorter than the noise.
 				w_len = np.min([len(temp[ifos.index(ifo)]), duration*sample_rate//2])
 				strains[ifo][i,duration*sample_rate//2 - w_len + offset: duration*sample_rate//2 + offset] = temp[ifos.index(ifo)]
-				delta_t_h1 = detectors[ifo].time_delay_from_detector(other_detector=detectors[ifos[0]],
+				delta_t_h1 = all_detectors[ifo].time_delay_from_detector(other_detector=all_detectors[ifos[0]],
 													right_ascension=params['ra'][n+i],
 													declination=params['dec'][n+i],
 													t_gps=params['gps'][n+i][0])
