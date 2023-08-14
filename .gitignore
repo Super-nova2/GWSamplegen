@@ -23,3 +23,10 @@ configs/*
 load*
 
 *.json
+
+
+# ignore job submission scripts
+SNR.sh
+bank.sh
+fetch_noise.sh
+generate_configs.sh
