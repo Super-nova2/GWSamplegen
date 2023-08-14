@@ -7,22 +7,6 @@
 # There should also be some params that can be changed on a per-file basis, such as seconds of EW
 
 
-#to note: we can have multiple noise datasets, and these can be used by different 'projects'
-#we can also have multiple template banks, which are also not necessarily unique to a project
-#we therefore need to store metadata in the noise and template bank directories, and will need to do some form of
-#checking to determine if the noise and template bank are compatible with the project
-
-
-#workflow of this project:
-#1. generate param file(s) inc. template param file.
-#2. generate template waveforms
-#3. generate noise files
-#4. for now: generate strain etc and save
-#in future: step 4. will be done on the fly
-
-
-
-
 #TODO params to add:
 #SEEDS
 #waveform length?
@@ -32,14 +16,17 @@
 #seconds of early warning
 #duration of noise to fetch?
 
+import argparse
 import numpy as np
 from pycbc.filter import sigma
 from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
+from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate
 from utils.waveform_utils import choose_templates
+from utils.glitch_utils import get_glitchy_times, get_glitchy_gps_time
+from utils.noise_utils import generate_time_slides, get_valid_noise_times, load_psd
 import multiprocessing as mp
-import h5py
 import json
 import os
 
@@ -59,8 +46,16 @@ from bilby.core.prior import (
 )
 
 from bilby.gw.prior import UniformComovingVolume, UniformSourceFrame
-
 from typing import TYPE_CHECKING, Optional, Union
+
+
+#import args from a config file if it exists
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--config-file', type=str, default=None)
+args = parser.parse_args()
+config_file = args.config_file
+
 
 
 #SHIELD: SNR-based Highly Intelligent Early Latencyless Detection network
@@ -68,38 +63,36 @@ from typing import TYPE_CHECKING, Optional, Union
 #start of user-defined params and param ranges. 
 
 #seed for reproducibility
-
-seed = 8810237
+seed = 88102
 
 #number of CPUS to use
 n_cpus = 20
 
 project_dir = "./configs/rectest"
 noise_dir = './noise/test'
-#template_bank_dir = './template_banks/BNS_lowspin_freqseries'
 
 #number of samples to generate
-n_signal_samples = 50000
-n_noise_samples = 50000
+n_signal_samples = 25000
+n_noise_samples = 25000
 
 #n_samples = 10000
 #noise_frac = 0.5
-glitch_frac = 0
+glitch_frac = 0.25
 
 
 approximant = "SpinTaylorT4"
 f_lower = 18
 delta_t = 1/2048
 
-#If possible, make waveform_lenth a power of 2. This reduces error between pycbc and tensorflow in the SNR calculation.
+#If possible, make waveform_length a power of 2. This reduces error between pycbc and tensorflow in the SNR calculation.
 waveform_length = 1024
 
-waveforms_per_file = 1000
+waveforms_per_file = 5000
 
 detectors = ['H1','L1']
 
 network_snr_threshold = 0
-detector_snr_threshold = 6
+detector_snr_threshold = 4
 
 #number of waveform templates to match with each waveform. These templates are taken from a distribution,
 #but the first template chosen will be guaranteed to have a high overlap with the waveform.
@@ -184,8 +177,24 @@ pol_prior = Uniform
 pol_min = 0.0
 pol_max = 1.0
 
-
-
+#if there is a config file specified, overwrite the above params with those from the config file
+if config_file:
+    print("loading args from a config file")
+    with open(config_file) as json_file:
+        config = json.load(json_file)
+        project_dir = config['project_dir']
+        noise_dir = config['noise_dir']
+        seed = config['seed']
+        #waveforms_per_file = config['waveforms_per_file']
+        detector_snr_threshold = config['detector_snr_threshold']
+        templates_per_waveform = config['templates_per_waveform']
+        n_signal_samples = config['n_signal_samples']
+        n_noise_samples = config['n_noise_samples']
+        glitch_frac = config['glitch_frac']
+        d_min = config['d_min']
+        d_max = config['d_max']
+    for key, value in config.items():
+        print(key, value)
 
 if not os.path.exists(noise_dir):
     raise ValueError("Noise directory does not exist. Generate a directory of noise to use with this dataset.")
@@ -202,29 +211,7 @@ with open(noise_dir + '/args.json') as f:
         raise ValueError("""Noise delta_t does not match specified delta_t.
                              Check noise directory and config file.""")
 
-#check that the template bank directory exists
 
-#if not os.path.exists(template_bank_dir):
-#    raise ValueError("Template bank directory does not exist. Generate a template bank to use with this dataset.")
-
-#check that these parameters are compatible with those from the template bank directory
-#TODO: instead of checking for compatibility, generate the template param file here! add it to the config dir
-#since we're not saving templates any more.
-
-#with open(template_bank_dir + '/args.json') as f:
-#    template_bank_args = json.load(f)
-#    if template_bank_args['approximant'] != template_approximant:
-
-#        print("""Warning: template bank approximant is {} but specified approximant is {}"""\
-#                         .format(template_bank_args['approximant'], approximant))
-
-#    if template_bank_args['f_lower'] != f_lower:
-#        print("""Warning: template bank f_lower is {} but specified f_lower is {}"""\
-#                         .format(template_bank_args['f_lower'], f_lower))
-    
-#    if template_bank_args['delta_t'] != delta_t:
-#        raise ValueError("""Fatal Error: template bank delta_t is {} but specified delta_t is {}"""\
-#                         .format(template_bank_args['delta_t'], delta_t))
 
 
 if not os.path.exists(project_dir):
@@ -243,11 +230,6 @@ q_max = 1.0
 
 #rather than selecting for spins, we scale the template spins by a factor. set to 0 for no spins, 1 for full spins
 spin_scale = 1
-
-#args = {'approximant': approximant,'f_lower': f_lower,'delta_t': delta_t, 'delta_f': delta_f, 'templates_per_file': templates_per_file,
-#        'mass1_min': mass1_min,'mass1_max': mass1_max,'mass2_min': mass2_min,'mass2_max': mass2_max,
-#        'q_min': q_min,'q_max': q_max}
-
 
 #templates are stored in the form: chirp mass, mass 1, mass 2, spin 1z, spin 2z
 templates = np.load("template_banks/GSTLal_templates.npy")
@@ -314,33 +296,20 @@ prior['pol'] = constructPrior(pol_prior, pol_min * np.pi *2, pol_max * np.pi *2)
 
 
 
-from utils.noise_utils import get_valid_noise_times, load_psd
-valid_times, _, _ = get_valid_noise_times(noise_dir,waveform_length)
-#gps = np.random.permutation(gps)
 
-#gps = np.repeat(gps,len(detectors),axis=0).reshape((len(gps),len(detectors)))
-#eventually handle timeslides, for now we just use the same GPS time for each ifo
+valid_times, _, _ = get_valid_noise_times(noise_dir,waveform_length)
 
 print(len(valid_times), "GPS times available")
 
-#if len(gps) < (n_signal_samples + n_noise_samples):
-#    raise ValueError("Not enough noise samples in noise directory. Generate more noise, or reduce the number of samples.")
 
-#load PSD from noise_dir
-
-psd = np.load(noise_dir + "/psd.npy")
+#load PSD 
 
 
-from pycbc.types import FrequencySeries
-
-#psds = {}
-#psds["H1"] = FrequencySeries(psd[1], delta_f = 1.0/psd[0][1], dtype = np.complex128)
-#psds["L1"] = FrequencySeries(psd[2], delta_f = 1.0/psd[0][1], dtype = np.complex128)
 psds = load_psd(noise_dir, waveform_length, detectors, f_lower, int(1/delta_t))
 
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
-def get_projected_waveform_mp(args):
+def get_snr(args):
     
     hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
                              spin1z = args['spin1z'], spin2z = args['spin2z'],
@@ -348,7 +317,6 @@ def get_projected_waveform_mp(args):
                              approximant = approximant, f_lower = f_lower, delta_t = delta_t)
     
     snrs = {}
-    #waveforms = np.empty(shape=(len(detectors), len(hp)))
 
     for detector in detectors:
         f_plus, f_cross = all_detectors[detector].antenna_pattern(
@@ -364,12 +332,7 @@ def get_projected_waveform_mp(args):
         
         snrs[detector] = snr
 
-        #detector_index = detectors.index(detector)
-        #waveforms[detector_index] = detector_signal
-
-    return snrs #waveforms, snrs
-
-#good_waveforms = []
+    return snrs
 
 good_params = []
 
@@ -377,27 +340,6 @@ generated_samples = 0
 iteration = 0
 
 wavetime = 0
-
-#injection_no_glitch = n_samples * (1-noise_frac) * (1-glitch_frac)
-#injection_plus_glitch = n_samples * glitch_frac * (1-noise_frac) /len(detectors)
-
-#noise_no_glitch = n_samples * noise_frac * (1-glitch_frac)
-#noise_plus_glitch = n_samples * glitch_frac * noise_frac /len(detectors)
-
-#glitches_per_ifo = n_samples * (1 - noise_frac) * glitch_frac / len(detectors)
-
-#params = {}
-
-#for ifo in detectors:
-#	params[ifo] = np.zeros(n_samples)
-#	glitch_start = int(n_samples * (1 - noise_frac) * (1-glitch_frac) + detectors.index(ifo) * glitches_per_ifo)
-#	glitch_end = int(glitch_start + glitches_per_ifo)
-#	params[ifo][glitch_start:glitch_end] = 1
-#	print(glitch_start, glitch_end)
-        
-
-from utils.glitch_utils import get_glitchy_times, get_glitchy_gps_time
-from utils.noise_utils import generate_time_slides
 
 max_waveform = 200
 SNR_thresh = 6
@@ -422,6 +364,7 @@ for ifo in detectors:
     glitchy_times[ifo] = glitchy
     glitchy_freqs[ifo] = freq
 
+
 #create timeslide generators
 min_separation = 3
 
@@ -435,14 +378,11 @@ for ifo in detectors:
 
 
 while generated_samples < n_signal_samples:
-
     #generate waveforms_per_file samples at a time, to avoid memory issues.
 
     p = prior.sample(waveforms_per_file)
 
     #adding non-sampled args to the parameters
-    #p['gps'] = gps[:waveforms_per_file]
-    #gps = gps[waveforms_per_file:]
     p['gps'] = []
 
     for detector in detectors:
@@ -467,21 +407,17 @@ while generated_samples < n_signal_samples:
     #turn dict of lists into a list of dicts (for multiprocessing)
     params = [{key: p[key][i] for key in p.keys()} for i in range(len(p['mass1']))]
 
-    
-    #generate the waveforms
+    #get the SNRs of the samples
     start = time.time()
     with mp.Pool(processes = n_cpus) as pool:
 
         #snrs is a list of dicts, where each dict is {detector: snr}
-        snrs = pool.map(get_projected_waveform_mp, params)
+        snrs = pool.map(get_snr, params)
         #mp_waveforms is a list of lists, where each list is [waveform, snrs]
         
-        #waveforms, snrs = zip(*mp_waveforms)
-    
     wavetime += time.time() - start
     
-    #save only the waveforms with network SNR above threshold.
-    #save in numpy files with associated parameters.
+    #save only the waveforms with network SNR and detector SNRs above threshold.
 
     for i in range(len(snrs)):
 
@@ -489,7 +425,6 @@ while generated_samples < n_signal_samples:
 
         if network_snr > network_snr_threshold and all([snr > detector_snr_threshold for snr in snrs[i].values()]):
             #this sample is suitable, get it ready for saving
-            #good_waveforms.append(waveforms[i])
 
             #add the detector SNRs and network SNR as keys in params[i]
             params[i]['network_snr'] = network_snr
@@ -505,31 +440,7 @@ while generated_samples < n_signal_samples:
                                                                templates_per_waveform, template_selection_width)
 
             good_params.append(params[i])
-        #else:
-        #    #print("discarding waveform with SNR " + str(network_snr))
-        #    #recycle gps time
-        #    #gps = np.append(gps, [params[i]['gps']], axis = 0)
 
-    #if iteration == 0 and len(good_waveforms)/waveforms_per_file < 0.5:
-    #    print("WARNING: check your distance prior and SNR threshold! Only " + str(len(good_waveforms)/waveforms_per_file) + 
-    #          " of the samples meet the SNR threshold.")
-    #elif iteration == 0:
-    #    print("SNR threshold looks good, {}% of samples meet the threshold.".format(len(good_waveforms)/waveforms_per_file*100))
-    
-    #now that we only have the good waveforms, we can save them to file.
-    #we don't necessarily have waveforms_per_file samples in good_waveforms, so we need to check that.
-
-    #if len(good_waveforms) > waveforms_per_file:
-    #    fname = project_dir+"/"+str(iteration*waveforms_per_file)+".npz"
-
-    #    print(fname)
-
-    #    temp = good_waveforms[:waveforms_per_file]
-    #    good_waveforms = good_waveforms[waveforms_per_file:]
-    #    np.savez(fname, *temp)
-
-    #    generated_samples += waveforms_per_file
-    #    iteration +=1
     generated_samples = len(good_params)
     if generated_samples <= waveforms_per_file:
         if generated_samples/waveforms_per_file < 0.5:
@@ -537,23 +448,23 @@ while generated_samples < n_signal_samples:
                   .format(round(generated_samples/waveforms_per_file*100)))
         else:
             print("SNR threshold looks good, {}% of samples meet the threshold.".format(round(generated_samples/waveforms_per_file*100)))
+    print(len(good_params))
 
-
+print('done samples with injections')
 
 #save the injection parameters to a file
 #convert from a list of dictionaries to a dictionary of lists
-
-good_params_dict = {key: np.array([good_params[i][key] for i in range(len(good_params))][:n_signal_samples]) for key in good_params[0].keys()}
-
+if n_signal_samples > 0:
+    good_params_dict = {key: np.array([good_params[i][key] for i in range(len(good_params))][:n_signal_samples]) for key in good_params[0].keys()}
 
 
 #generate noise samples. most of the parameters aren't used, but the masses are used to choose the templates.
 
 if n_noise_samples > 0:
     noise_p = prior.sample(n_noise_samples)
-    noise_p['gps'] = []#gps[:n_noise_samples]
+    noise_p['gps'] = []
     noise_p['injection'] = np.zeros(n_noise_samples, dtype = bool)
-
+    noise_p['template_waveforms'] = np.random.randint(0, len(template_bank_params), size=(n_noise_samples,templates_per_waveform))
     templates = []
 
     #TODO: get the actual max SNR for the noise segment maybe?
@@ -579,21 +490,29 @@ if n_noise_samples > 0:
         else:
             noise_p['gps'].append(list(next(glitchless_generator)))
 
-        params = {key: noise_p[key][i] for key in noise_p.keys()}
-        templates.append(choose_templates(template_bank_params, params, templates_per_waveform, template_selection_width))
+        #params = {key: noise_p[key][i] for key in noise_p.keys()}
+        #templates.append(choose_templates(template_bank_params, params, templates_per_waveform, template_selection_width))
 
-    noise_p['template_waveforms'] = np.array(templates)
+    #noise_p['template_waveforms'] = np.array(templates)
 
-    for key in good_params_dict.keys():
-        good_params_dict[key] = np.append(good_params_dict[key], noise_p[key], axis = 0)
+    if n_signal_samples > 0:
+        for key in good_params_dict.keys():
+            good_params_dict[key] = np.append(good_params_dict[key], noise_p[key], axis = 0)
+    else:
+        good_params_dict = noise_p
 
 #np.save(project_dir+"/"+"noise_params.npy", noise_p)
 np.save(project_dir+"/"+"params.npy", good_params_dict)
 
 #save the arguments used to generate the parameters to a file
 
-args = {"n_signal_samples": n_signal_samples,
+args = {"seed": seed,
+            "n_signal_samples": n_signal_samples,
             "n_noise_samples": n_noise_samples,
+            "glitch_frac": glitch_frac,
+            "project_dir": project_dir,
+            "noise_dir": noise_dir,
+            "templates_per_waveform": templates_per_waveform,
             "approximant": approximant,
             "f_lower": f_lower,
             "delta_t": delta_t,
@@ -627,8 +546,7 @@ args = {"n_signal_samples": n_signal_samples,
             "inc_max": inc_max,
             "pol_prior": pol_prior.__name__,
             "pol_min": pol_min,
-            "pol_max": pol_max,
-            "seed":seed}
+            "pol_max": pol_max}
 
 #save args
 with open(project_dir+"/"+"args.json", 'w') as f:

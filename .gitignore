@@ -21,3 +21,5 @@ configs/*
 
 
 load*
+
+*.json

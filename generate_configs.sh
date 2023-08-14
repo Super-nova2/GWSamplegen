@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=generate_configs
-#SBATCH --output=generate_configs.log
+#SBATCH --job-name=generate_configs4
+#SBATCH --output=generate_configs4.log
 #SBATCH --cpus-per-task=20
-#SBATCH --time=04:00:00
+#SBATCH --time=02:00:00
 #SBATCH --mem=20gb
 
 module load gcc/10.3.0
@@ -13,4 +13,5 @@ source /fred/oz016/alistair/nt_env/bin/activate
 
 cd "/fred/oz016/alistair/GWSamplegen"
 
-python generate_configs.py
+python generate_configs.py --config-file=args4.json
+#--config-file=configs/test1/args.json

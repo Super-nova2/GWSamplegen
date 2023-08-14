@@ -17,6 +17,19 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 
 import multiprocessing as mp
 
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--index', type=int)
+parser.add_argument('--totaljobs', type=int, default=1)
+parser.add_argument('--config-file', type=str, default=None)
+args = parser.parse_args()
+
+total_jobs = args.totaljobs
+index = args.index
+config_file = args.config_file
+
+print("NOW STARTING JOB",index,"OF",total_jobs)
 
 #Ideas for speedup:
 #smaller sized template bank files. not sure this is necessary since we are using a memmap
@@ -39,9 +52,9 @@ seconds_before = 1
 seconds_after = 1
 offset = 0
 
-fname = 'test.npy'
+fname = 'testmulti.npy'
 
-config_dir = "./configs/rectest"
+project_dir = "./configs/train1"
 noise_dir = "./noise/test"
 #template_dir = "./template_banks/BNS_lowspin_freqseries"
 
@@ -51,32 +64,52 @@ noise_dir = "./noise/test"
 #samples_per_batch is limited by how many samples we can fit into a 2 Gb tensor
 #mp_batch is limited by the amount of memory available.
 
-samples_per_batch = 100
-samples_per_file = 100000
+samples_per_batch = 10
+#samples_per_file = 10000
+
 
 #number of batches to process in parallel
-mp_batch = 20
-n_cpus = 20
+mp_batch = 10
+n_cpus = 10
 
 offset = np.min((offset*sample_rate, duration//2))
 
+import json
+if config_file:
+	print("loading args from a config file")
+	with open(config_file) as json_file:
+		config = json.load(json_file)
+		project_dir = config['project_dir']
+		noise_dir = config['noise_dir']
+		seed = config['seed']
+		samples_per_batch = min(100//config['templates_per_waveform'],50)
+	for key, value in config.items():
+		print(key, value)
+
+
+print("SAMPLES_PER_BATCH:",samples_per_batch)
 
 ###################################################load noise segments
 valid_times, paths, files = get_valid_noise_times(noise_dir,0)
 segments = load_noise(noise_dir)
 
-params = np.load(config_dir + "/params.npy", allow_pickle=True).item(0)
+params = np.load(project_dir + "/params.npy", allow_pickle=True).item(0)
 template_ids = np.array(params['template_waveforms'])
 gps = params['gps']
 n_templates = len(template_ids[0])
 
-templates = np.load(config_dir + "/template_params.npy")
+templates = np.load(project_dir + "/template_params.npy")
 
 #Damon's definition of N. from testing, it's just the total length of the segment in samples
 #N = (len(sample1)-1) * 2
 N = int(duration/delta_t)
 kmin, kmax = tf_get_cutoff_indices(f_lower, None, delta_f, N)
 
+
+##CLEAN UP: JOB ARRAY STUFF GOING HERE FOR NOW
+
+samples_per_file = len(params['mass1'])//total_jobs
+print("samples per file is",samples_per_file)
 
 
 ##################################################load PSD
@@ -95,7 +128,7 @@ for i in range(len(ifos)):
 	psds[ifos[i]] = inverse_spectrum_truncation(psds[ifos[i]], int(4 * sample_rate),
 									low_frequency_cutoff=f_lower)
 	#plt.loglog(psds[ifos[i]].sample_frequencies[18500:], psds[ifos[i]][18500:])
-	    
+		
 	psds[ifos[i]] = tf.convert_to_tensor(psds[ifos[i]], dtype=tf.complex128)
 	psds[ifos[i]] = tf.slice(psds[ifos[i]], begin=[kmin], size=[kmax-kmin])
 	
@@ -103,8 +136,14 @@ for i in range(len(ifos)):
 
 
 #create an array on disk that we will save the samples to.
-fp = np.memmap(config_dir + "/" + fname, dtype=np.complex64, mode='w+', 
-               shape=(len(ifos),n_templates*samples_per_file, (seconds_before + seconds_after)*sample_rate), offset=128)
+if not os.path.exists(project_dir + "/" + fname):
+	print("FILE DOES NOT EXIST, PROCESS {} IS CREATING IT".format(index))
+	fp = np.memmap(project_dir + "/" + fname, dtype=np.complex64, mode='w+', 
+				shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
+else:
+	print("FILE EXISTS, PROCESS {} IS LOADING IT".format(index))
+	fp = np.memmap(project_dir + "/" + fname, dtype=np.complex64, mode='r+', 
+				shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
 
 #detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
@@ -144,26 +183,26 @@ from pycbc.waveform import get_td_waveform
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
 def get_projected_waveform_mp(args):
-    
-    hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
-                             spin1z = args['spin1z'], spin2z = args['spin2z'],
-                             inclination = args['i'], distance = args['d'],
-                             approximant = td_approximant, f_lower = f_lower, delta_t = delta_t)
-    
-    waveforms = np.empty(shape=(len(ifos), len(hp)))
+	
+	hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
+							 spin1z = args['spin1z'], spin2z = args['spin2z'],
+							 inclination = args['i'], distance = args['d'],
+							 approximant = td_approximant, f_lower = f_lower, delta_t = delta_t)
+	
+	waveforms = np.empty(shape=(len(ifos), len(hp)))
 
-    for detector in ifos:
-        f_plus, f_cross = all_detectors[detector].antenna_pattern(
-            right_ascension=args['ra'], declination=args['dec'],
-            polarization=args['pol'],
-            t_gps=args['gps'][0])
-        
-        detector_signal = f_plus * hp + f_cross * hc
+	for detector in ifos:
+		f_plus, f_cross = all_detectors[detector].antenna_pattern(
+			right_ascension=args['ra'], declination=args['dec'],
+			polarization=args['pol'],
+			t_gps=args['gps'][0])
+		
+		detector_signal = f_plus * hp + f_cross * hc
 
-        detector_index = ifos.index(detector)
-        waveforms[detector_index] = detector_signal
+		detector_index = ifos.index(detector)
+		waveforms[detector_index] = detector_signal
 
-    return waveforms
+	return waveforms
 
 def run_batch(n):
 	#file_idx = templates_per_file * (np.ravel(template_ids[n:n+samples_per_batch])//templates_per_file)
@@ -180,7 +219,7 @@ def run_batch(n):
 				   		spin1z = 0, spin2z = 0,
 						approximant = approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)[0].data[kmin:kmax]
 		  				#spin1z = batch_template_params[i,3], spin2z = batch_template_params[i,4],
-            			
+						
 
 	
 	#for i in range(n_templates * samples_per_batch):
@@ -203,7 +242,7 @@ def run_batch(n):
 		strains[ifo] = np.zeros((samples_per_batch, duration*sample_rate))
 
 	for i in range(samples_per_batch):
-		print("sample:", n+i, "template", t_ids[i])
+		#print("sample:", n+i, "template", t_ids[i])
 		noise = fetch_noise_loaded(segments,duration,gps[n+i],sample_rate,paths)
 
 		if params["injection"][n+i]:
@@ -234,7 +273,7 @@ def run_batch(n):
 
 				strains[ifo][i] += noise[ifos.index(ifo)]
 		else:
-			print("no injection in sample ", n+i)
+			#print("no injection in sample ", n+i)
 			for ifo in ifos:
 				strains[ifo][i] = noise[ifos.index(ifo)]
 	#waveform_time += time.time() - start
@@ -251,15 +290,20 @@ def run_batch(n):
 
 
 
-for n in range(0,samples_per_file,samples_per_batch*mp_batch):
+#for n in range(0,samples_per_file,samples_per_batch*mp_batch):
+for n in range(index*samples_per_file,(index+1)*samples_per_file,samples_per_batch*mp_batch):
 	#print("batch:", n//samples_per_batch)
 	#print(n)
 	#for i in range(0,samples_per_file,samples_per_batch*mp_batch):
-	print("starting batches",[j for j in range(n,min(n+mp_batch*samples_per_batch, samples_per_file),samples_per_batch)])
+	#print("starting batches",[j for j in range(n,min(n+mp_batch*samples_per_batch, samples_per_file),samples_per_batch)])
+	end = min(n+mp_batch*samples_per_batch, (index+1)*samples_per_file)
+
+	print("starting batches",[j for j in range(n,end,samples_per_batch)])
 
 	start = time.time()
 	with mp.Pool(n_cpus) as p:
-		results = p.map(run_batch, [j for j in range(n,min(n+mp_batch*samples_per_batch, samples_per_file),samples_per_batch)])
+		results = p.map(run_batch, [j for j in range(n,end,samples_per_batch)])
+		#results = p.map(run_batch, [j for j in range(n,min(n+mp_batch*samples_per_batch, samples_per_file),samples_per_batch)])
 	template_time += time.time() - start
 
 	#TODO: ensure we can handle the case where the number of samples is not divisible by samples_per_batch,
@@ -303,7 +347,7 @@ print("total time:", time.time() - allstart)
 
 
 t_time = time.time() - allstart
-print("it would take ", (25000 * t_time/samples_per_file)/3600, "hours to process 25000 samples.")
+print("it would take ", (25000 * t_time/(samples_per_file*total_jobs))/3600, "hours to process 25000 samples.")
 
 #snrlist = []
 
@@ -315,7 +359,7 @@ fp.flush()
 #memmap'd files don't have a header describing the shape of the array, so we add one here
 
 header = np.lib.format.header_data_from_array_1_0(fp)
-with open(config_dir + "/" + fname, 'r+b') as f:
+with open(project_dir + "/" + fname, 'r+b') as f:
 	np.lib.format.write_array_header_1_0(f, header)
 
 #pool.close()

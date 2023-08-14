@@ -68,7 +68,11 @@ segs = [[1239554617, 1239555563]]
 ifo_1 = 'noise/segments/H1_O3a.txt'
 ifo_2 = 'noise/segments/L1_O3a.txt'
 
-segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,1239150592,1239150592 + 1e4, min_duration=min_duration)
+
+start = 1239150592
+end = start+5e5
+
+segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,start,end, min_duration=min_duration)
 
 
 print(segs)
@@ -181,7 +185,9 @@ def split_segment(
 args = {
     "sample_rate": 1.0/sample_rate,
     "min_duration": min_duration,
-    "detectors": ifos
+    "detectors": ifos,
+    "start_time": start,
+    "end_time": end
 }
 
 with open(write_dir + "/args.json", "w") as f:

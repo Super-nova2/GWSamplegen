@@ -36,7 +36,7 @@ def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_
 	
 	glitchmask = np.zeros(len(valid_times), dtype=bool)
 
-	print(len(no_glitch))
+	#print(len(no_glitch))
 	mask = np.ones(len(valid_times), dtype=bool)
 	for i in range(len(valid_times)):
 		if valid_times[i] in no_glitch:
@@ -45,7 +45,7 @@ def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_
 	glitchless_times = valid_times[mask]
 	glitchy_times = glitch
 
-	print("There are {} glitchy times and {} glitchless times".format(len(glitchy_times), len(glitchless_times)))
+	print("There are {} glitchy times and {} glitchless times in {}".format(len(glitchy_times), len(glitchless_times), glitch_file[:2]))
 
 	return glitchy_times, glitchless_times, frequency_list#, glitch_idxs
 
