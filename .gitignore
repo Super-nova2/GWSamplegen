@@ -18,8 +18,14 @@ configs/*
 **.ipynb
 
 **__pycache__**
-
+logs
 
 load*
 
 *.json
+configGen.ipynb
+noiseGen.ipynb
+
+#random stuff I don't want added
+
+test.sh

@@ -11,6 +11,7 @@ from pycbc.types.timeseries import TimeSeries
 from utils.SNR_utils import array_matched_filter, tf_get_cutoff_indices
 import tensorflow as tf
 from pycbc.waveform import get_fd_waveform
+import pycbc.noise
 
 #import asyncio
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
@@ -48,11 +49,11 @@ td_approximant = "SpinTaylorT4"
 
 ifos = ['H1', 'L1']
 
-seconds_before = 1
-seconds_after = 1
+seconds_before = 100
+seconds_after = 400
 offset = 0
 
-fname = 'testmulti.npy'
+fname = 'SNR.npy'
 
 project_dir = "./configs/train1"
 noise_dir = "./noise/test"
@@ -68,7 +69,7 @@ samples_per_batch = 10
 #samples_per_file = 10000
 
 
-#number of batches to process in parallel
+#number of batches to process in parallel. determined by the available cores and memory.
 mp_batch = 10
 n_cpus = 10
 
@@ -82,11 +83,17 @@ if config_file:
 		project_dir = config['project_dir']
 		noise_dir = config['noise_dir']
 		seed = config['seed']
-		samples_per_batch = min(100//config['templates_per_waveform'],50)
-	for key, value in config.items():
-		print(key, value)
+		
+		noise_type = config['noise_type']
+		n_signal_samples = config['n_signal_samples']
+		n_noise_samples = config['n_noise_samples']
+		ifos = config['detectors']
+		
+	if index == total_jobs - 1:
+		for key, value in config.items():
+			print(key, value)
 
-
+samples_per_batch = min(100//(config['templates_per_waveform']),50)
 print("SAMPLES_PER_BATCH:",samples_per_batch)
 
 ###################################################load noise segments
@@ -117,22 +124,15 @@ psd = np.load(noise_dir + "/psd.npy")
 
 #since psd[0] is the sample frequencies, and the first frequency is always 0 Hz, psd[0][1] is sample frequency
 psds = {}
-
+t_psds = {}
 import matplotlib.pyplot as plt
+from utils.noise_utils import load_psd
+
+psds = load_psd(noise_dir, duration, ifos, f_lower, int(1/delta_t))
 
 for i in range(len(ifos)):
-	psds[ifos[i]] = FrequencySeries(psd[i+1], delta_f = psd[0][1], dtype = np.complex128)
-	psds[ifos[i]] = interpolate(psds[ifos[i]], delta_f= 1/(duration))
-	#TODO: not sure if inverse spectrum truncation is required. I think we do since a 4 second window size 
-	#is used when creating the PSD.
-	psds[ifos[i]] = inverse_spectrum_truncation(psds[ifos[i]], int(4 * sample_rate),
-									low_frequency_cutoff=f_lower)
-	#plt.loglog(psds[ifos[i]].sample_frequencies[18500:], psds[ifos[i]][18500:])
-		
-	psds[ifos[i]] = tf.convert_to_tensor(psds[ifos[i]], dtype=tf.complex128)
-	psds[ifos[i]] = tf.slice(psds[ifos[i]], begin=[kmin], size=[kmax-kmin])
-	
-#plt.savefig("psd.png")
+	t_psds[ifos[i]] = tf.convert_to_tensor(psds[ifos[i]], dtype=tf.complex128)
+	t_psds[ifos[i]] = tf.slice(t_psds[ifos[i]], begin=[kmin], size=[kmax-kmin])
 
 
 #create an array on disk that we will save the samples to.
@@ -146,6 +146,7 @@ else:
 				shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
 
 #detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
+print("file will have shape ", fp.shape)
 
 ##################################################calculate the SNR
 
@@ -243,7 +244,13 @@ def run_batch(n):
 
 	for i in range(samples_per_batch):
 		#print("sample:", n+i, "template", t_ids[i])
-		noise = fetch_noise_loaded(segments,duration,gps[n+i],sample_rate,paths)
+		if noise_type == "Gaussian":
+			noise = np.zeros((len(ifos), duration*sample_rate))
+			for j in range(len(ifos)):
+				noise[j] = pycbc.noise.gaussian.noise_from_psd(duration*int(1/delta_t),delta_t,psds[ifos[j]],
+						   seed=seed+n+i*len(ifos)+j)
+		else:
+			noise = fetch_noise_loaded(segments,duration,gps[n+i],sample_rate,paths)
 
 		if params["injection"][n+i]:
 			#TODO: speed up file loading, as the batch's waveforms should be in 1 or 2 files.
@@ -325,7 +332,7 @@ for n in range(index*samples_per_file,(index+1)*samples_per_file,samples_per_bat
 				repeat_time += time.time() - start
 
 				start = time.time()
-				x = array_matched_filter(strain, t_templates, psds[ifo], N, kmin, kmax, duration, delta_t = delta_t, flow = f_lower)
+				x = array_matched_filter(strain, t_templates, t_psds[ifo], N, kmin, kmax, duration, delta_t = delta_t, flow = f_lower)
 				SNR_time += time.time() - start
 
 			fp[ifos.index(ifo)][(i)*n_templates*samples_per_batch + n_templates*n:(i+1)*n_templates*samples_per_batch + n_templates*n] = \
@@ -349,10 +356,6 @@ print("total time:", time.time() - allstart)
 t_time = time.time() - allstart
 print("it would take ", (25000 * t_time/(samples_per_file*total_jobs))/3600, "hours to process 25000 samples.")
 
-#snrlist = []
-
-#mp_snr(n)
-
 
 fp.flush()
 
@@ -363,3 +366,29 @@ with open(project_dir + "/" + fname, 'r+b') as f:
 	np.lib.format.write_array_header_1_0(f, header)
 
 #pool.close()
+
+print("done!")
+#sanity check on the SNR values
+
+"""
+import matplotlib.pyplot as plt
+
+for i in range(len(fp)):
+	if np.min(np.max(np.abs(fp[i]), axis = 1)) < 0.1:
+		print("SNR is too low. not all jobs have necessarily finished.")
+
+
+	plt.plot(np.max(np.abs(fp[i]), axis = 1), alpha=0.5)
+
+plt.savefig(project_dir + "/max_SNRs.png")
+
+plt.clf()
+
+
+if np.min(np.max(np.abs(fp[0]), axis = 1)[:n_signal_samples * n_templates]) > 0.1:
+	print("all jobs should have finished. ")		
+	for ifo in ifos:
+		plt.hist(np.max(np.abs(fp[ifos.index(ifo)]), axis = 1)[:n_signal_samples *n_templates: n_templates]/ params[ifo+'_snr'][:n_signal_samples], bins=30, alpha=0.5)
+	plt.xlabel("recovered/injected SNR")
+	plt.savefig(project_dir + "/recovered_SNR.png")
+"""

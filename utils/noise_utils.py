@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from pycbc.types.timeseries import TimeSeries
 from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate, inverse_spectrum_truncation
+import json
 
 import time
 #length of noise the waveform is injected into. for BNS, I use 1000 seconds
@@ -18,6 +19,7 @@ noise_path = "../real_noise/"
 
 #function to retrieve valid start times for injecting gravitational wave samples into. 
 
+"""
 def load_noise_paths(
 	noise_dir: str
 ) -> List[str]:
@@ -27,16 +29,29 @@ def load_noise_paths(
 	paths = [noise_dir + path for path in paths]
 	
 	return paths
-	
+"""
 	
 def get_valid_noise_times(
 	noise_dir: str,
-	noise_len: int
-) -> List[int]:
-	"""multipurpose function to return a list of valid start times, list of noise file paths and deconstructed file names """
+	noise_len: int,
+	start_time: int = None,
+	end_time: int = None,
+) -> (List[int], np.ndarray, List[str]):
+	"""multipurpose function to return a list of valid start times, list of noise file paths and deconstructed file names 
+	
+	noise_dir: directory containing noise files
+	noise_len: minimum length of noise segments to consider
+	start_time: if specified, the start of the time window to consider. Otherwise, all noise in noise_dir will be used.
+	end_time: if specified, the end of the time window to consider
+
+	returns:
+
+	valid_times: list of valid start times for noise segments
+	paths: array of deconstructed file names, giving detector info, segment start time and duration
+	file_list: list of noise file paths in chronological order
+	"""
 
 	valid_times = np.array([])
-	
 	
 	#get all strain file paths from the noise directory, then extract their start time and duration
 	paths = os.listdir(noise_dir)
@@ -48,17 +63,43 @@ def get_valid_noise_times(
 
 	ifo_list = paths[0][0]
 	
+	valid_paths = []
+	for path in paths:
+		if int(path[2][:-4]) >= noise_len:
+			if start_time is not None and end_time is not None:
+				if int(path[1]) <= start_time and int(path[1]) + int(path[2][:-4]) - start_time >= noise_len:
+					valid_paths.append(path)
+					print("path valid, starts before", path)
+				
+				elif int(path[1]) >= start_time and int(path[1]) + int(path[2][:-4]) <= end_time:
+					valid_paths.append(path)
+					print("path valid, contained", path)
 
+				
+				elif int(path[1]) < end_time and int(path[1]) + int(path[2][:-4]) - end_time >= noise_len:
+					
+					valid_paths.append(path)
+					print("path valid, ends after", path)
+
+				else:
+					pass
+					#print("path not valid", path)
+			
+			else:
+				valid_paths.append(path)
+
+	paths = valid_paths
 	for path in paths:
 		path[1] = int(path[1])
 		path[2] = int(path[2][:-4])
-		
-		if path[2] <= noise_len:
-			print("file length is shorter than desired noise segment length, skipping...")
-			continue
-		
+
+		#print(path[1], path[2])
+
 		times = np.arange(path[1], path[1]+path[2] - noise_len)
 		valid_times = np.concatenate((valid_times,times))
+
+		if start_time is not None and end_time is not None:
+			valid_times = valid_times[(valid_times >= start_time) & (valid_times + noise_len <= end_time) ]
 		
 	#ensure the file paths are in chronological order
 	paths = np.array(paths)
@@ -67,58 +108,11 @@ def get_valid_noise_times(
 	valid_times = np.sort(valid_times)
 
 	#reconstruct the file paths from the start times and ifo_list
-
 	file_list = [noise_dir +"/"+ ifo_list +"-"+ path[1] +"-"+ path[2] +".npy" for path in paths]
 
-	#paths = [noise_dir + path for path in paths]
-	
-	#now that we have all the noise times, we load them into a list 
-	#np.random.shuffle(valid_times)
-	
-	#for each noise time, which file is it in and how far into the file is it?
-	#print(paths)
-	
 	return valid_times, paths, file_list
 
 
-def generate_time_slides(detector_data, min_distance):
-	num_detectors = len(detector_data)
-	data_lengths = [len(data) for data in detector_data]
-	indices = [list(range(length)) for length in data_lengths]
-	used_combinations = set()
-
-	while True:
-		min_length = min(data_lengths)
-		# Limits the number of possible samples we draw from the generator
-		if len(used_combinations) == (min_length - (min_distance - 1)) * (min_length - min_distance):
-			print("No more unique combinations available.")
-			return
-		
-		sample_indices = [np.random.choice(indices[i]) for i in range(num_detectors)]
-		
-		if all(abs(sample_indices[i] - sample_indices[j]) >= min_distance for i in range(num_detectors) for j in range(i+1, num_detectors)):
-			combination = tuple(sample_indices)
-			
-			if combination not in used_combinations:
-				used_combinations.add(combination)
-				yield tuple(detector_data[i][sample_indices[i]] for i in range(num_detectors))
-
-	
-def load_noise_timeseries(    
-	paths: np.ndarray
-) -> List[np.ndarray]:
-	
-	noise_list = []
-	for path in paths:
-		#TODO: handle arbitrary groups of interferometers. Assume each noise file in a dir has the same ifos
-		f = np.load(noise_path+"HL-"+str(path[0])+"-"+str(path[1])+".npy")
-
-		noise_list.append(f)
-		print("loaded a noise file")
-		#noise_samples = np.concatenate((noise_samples,f['L1'][()]))
-		
-	return noise_list
-	
 def load_noise(noise_dir):
 	_,_, fps = get_valid_noise_times(noise_dir,0)
 
@@ -156,6 +150,31 @@ def fetch_noise_loaded(
 		noises[i] = np.copy(noise_list[f_idx][i,start_idx:start_idx + noise_len * sample_rate])
 
 	return noises
+
+
+def generate_time_slides(detector_data, min_distance):
+	num_detectors = len(detector_data)
+	data_lengths = [len(data) for data in detector_data]
+	indices = [list(range(length)) for length in data_lengths]
+	used_combinations = set()
+
+	while True:
+		min_length = min(data_lengths)
+		# Limits the number of possible samples we draw from the generator
+		if len(used_combinations) == (min_length - (min_distance - 1)) * (min_length - min_distance):
+			print("No more unique combinations available.")
+			return
+		
+		sample_indices = [np.random.choice(indices[i]) for i in range(num_detectors)]
+		
+		if all(abs(sample_indices[i] - sample_indices[j]) >= min_distance for i in range(num_detectors) for j in range(i+1, num_detectors)):
+			combination = tuple(sample_indices)
+			
+			if combination not in used_combinations:
+				used_combinations.add(combination)
+				yield tuple(detector_data[i][sample_indices[i]] for i in range(num_detectors))
+
+	
 
 
 
@@ -273,14 +292,15 @@ def combine_seg_list(file_h1, file_l1, macrostart, macroend, min_duration):
 	return good_segs, good_segs_h1, good_segs_l1
 
 
+#PSD UTILS
 
-def get_noise_PSD(
+def construct_noise_PSD(
 	#segments: List[np.ndarray],
 	noise_paths: List[str]
 	#path: str
 ):
 	"""Create an averaged PSD of noise segments. This way of doing things is fine so long as the noise is stationary
-	(which it is provided the segments do not span longer than ~1 week.)
+	(which it is provided the segments do not span longer than ~1-2 weeks.)
 	"""
 
 	segments = []
@@ -317,16 +337,20 @@ def get_noise_PSD(
 	np.save(os.path.dirname(noise_paths[0]) + "/psd.npy", ifo_psds)
 
 def load_psd(
-		noise_dir: str,
-		duration: int,
-		ifos: List[str],
-		f_lower: int,
-		sample_rate: int
+	noise_dir: str,
+	duration: int,
+	ifos: List[str],
+	f_lower: int,
+	sample_rate: int
 ):
+	with open(noise_dir+ '/args.json') as f:
+		args = json.load(f)
+		ifo_list = args['detectors']
+
 	psd = np.load(noise_dir + "/psd.npy")
 	psds = {}
 	for i in range(len(ifos)):
-		psds[ifos[i]] = FrequencySeries(psd[i+1], delta_f = psd[0][1], dtype = np.complex128)
+		psds[ifos[i]] = FrequencySeries(psd[ifo_list.index(ifos[i])+1], delta_f = psd[0][1], dtype = np.complex128)
 		psds[ifos[i]] = interpolate(psds[ifos[i]], delta_f= 1/(duration))
 		psds[ifos[i]] = inverse_spectrum_truncation(psds[ifos[i]], int(4 * sample_rate),
 										low_frequency_cutoff=f_lower)

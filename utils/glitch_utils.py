@@ -4,7 +4,7 @@ from .waveform_utils import t_at_f
 
 
 
-def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_cutoff = 5, freq_cutoff = 0):
+def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_cutoff = 5, freq_cutoff = 0, seconds_before = 1, seconds_after = 1):
 
 	#longest_waveform is the rough length of the longest waveform in seconds
 	glitch_data = np.load(glitch_file, allow_pickle=True).item()
@@ -21,7 +21,8 @@ def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_
 	glitch_idxs = []
 
 	for i in range(len(glitch_array)):
-		exclude = np.arange(int(glitch_array[i,3]-1 - duration//2), int(glitch_array[i,4]+longest_waveform - duration//2))
+		#exclude is not backwards, the higher the index the *earlier* the glitch appears in the data. longest_waveform therefore excludes higher indices.
+		exclude = np.arange(int(glitch_array[i,3]-seconds_after - duration//2), int(glitch_array[i,4]+longest_waveform + seconds_before - duration//2))
 		#TODO: expand include based on the length of the waveform. longer samples can be injected multiple times into a glitch.
 		include = int(glitch_array[i,0] - duration//2 +1)
 

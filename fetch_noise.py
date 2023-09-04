@@ -3,25 +3,34 @@ import h5py
 import numpy as np
 from gwpy.timeseries import TimeSeries, TimeSeriesDict
 from utils.mldatafind.find import find_data
-from utils.noise_utils import combine_seg_list, get_noise_PSD, get_valid_noise_times
+from utils.noise_utils import combine_seg_list, construct_noise_PSD, get_valid_noise_times
 import json
 
 #script to fetch noise data from GWOSC and save it to disk. Since this requires an internet connection, 
 #you will have to run it on a node with internet access if submitting to a compute cluster.
 #takes roughly 3 minutes per ifo per day of data, for example, downloading 2 days of H1 and L1 data takes ~12 minutes.
 
-#mldatafind.authenticate.authenticate()
 
 #note: in find.py, n_samples definition on line 28 needs to be: n_samples = int(n_channels * duration * sample_rate)
 #some strange bug causes it to think it's a 32bit LIGO gps time
 
-write_dir = "/test_2"
+#For reference, these are the frame type, channel and state flag used for GWOSC open data.
+frame_type = "HOFT_CLEAN_SUB60HZ_C01"
+channel =  "DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01"
+state_flag = "DMT-ANALYSIS_READY:1"
+
+
+
+print("starting")
+
+
+write_dir = "/fred/oz016/alistair/GWSamplegen/noise/O3_first_week_1024"
 
 #get current working directory
 cwd = os.getcwd()
 
 sample_rate = 2048
-min_duration = 1000
+min_duration = 1024
 
 #create write_dir if it doesn't exist
 if not os.path.exists(write_dir):
@@ -30,47 +39,19 @@ if not os.path.exists(write_dir):
 
 ifos = ["H1","L1"]
 
-#C02?
-flagname = ":DMT-ANALYSIS_READY:1"
 
-flagname = "_DATA"
-
-#C00
-#flagname = ":GDS-CALIB_STRAIN"
-#flagname = ":DCS-ANALYSIS_READY_C02:1"
-
-#C01
-#flagname = 
-
-#gw_data_find --help
+ifo_1 = '/fred/oz016/alistair/GWSamplegen/noise/segments/H1_O3a.txt'
+ifo_2 = '/fred/oz016/alistair/GWSamplegen/noise/segments/L1_O3a.txt'
 
 
+#doing the whole of O3
 
-flags = [ifo + flagname for ifo in ifos]
-
+start = 1238166018
+end = start + 60*60*24*7
 
 #1239150592 is some time in O3, a bit after GW190425
-
-#for my BNS samples, I use 1010 seconds of noise, then remove the outer 5 seconds due to whitening
-
-#all the noise I need (and more) can be achieved in this 5e5 seconds of data
-
-#segs = query_segments(flags, 1239150592, 1239150592 + 5e5, min_duration = 1010)
-
-#segs = query_segments(flags, 1239213516, 1239213516 + 2e4, min_duration = 1000)
-
-
-#segs = query_segments(flags, 1239554063, 1239554063 + 1500, min_duration = 1)
-
-#segs = query_segments(["H1:DMT-ANALYSIS_READY:1","L1:DMT-ANALYSIS_READY:1"], 1239150592, 1239150592 + 1e4, min_duration = 1000)
-segs = [[1239554617, 1239555563]]
-
-ifo_1 = 'noise/segments/H1_O3a.txt'
-ifo_2 = 'noise/segments/L1_O3a.txt'
-
-
-start = 1239150592
-end = start+5e5
+#start = 1239150592
+#end = start+5e5
 
 segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,start,end, min_duration=min_duration)
 
@@ -116,13 +97,14 @@ for segment in data:
     np.save(fname,arr)
 
 
-
+print("finished downloading noise! now calculating PSDs.")
 #after saving, we now need to calculate the PSDs.
 
 
-_, paths = get_valid_noise_times(write_dir, min_duration)
+_, _ , paths = get_valid_noise_times(write_dir, min_duration)
 
 
+construct_noise_PSD(paths)
 
 
 
