@@ -22,12 +22,16 @@ from omicron.cli.process import main as omicron_main
 #X509_USER_PROXY=/home/user.name/auth/CERT_KEY.pem
 #LIGO_USERNAME=user.name
 
-authenticate()
+authenticate.authenticate()
 
 
 #these should be pulled from noise dir
-start = 1239150592
-end = int(1239150592 + 5e5)
+#start = 1239150592
+#end = int(1239150592 + 5e5)
+
+start = 1238166018
+end = 1238770818
+
 ifos = ["H1", "L1"]
 
 #GWOSC settings
@@ -142,7 +146,7 @@ for ifo in ifos:
     done = omicron_main_wrapper(
         start=start,
         stop=end,
-        run_dir=Path("./GLITCHES/triggers_{}".format(ifo)),
+        run_dir=Path("./glitches/triggers_{}".format(ifo)),
         q_min=3.3166,
         q_max=150,
         f_min=18,
@@ -162,10 +166,10 @@ for ifo in ifos:
         verbose=True
     )
 
+    print("finished finding glitches for {}".format(ifo))
 
     #create a dictionary of the triggers
-
-    ifo = "L1"
+    
     from pathlib import Path
 
     #H1_glitches and L1_glitches from aframe args are in omicron2/BNS
@@ -173,7 +177,7 @@ for ifo in ifos:
     #trigger_dir = Path("./BNS_{}/merge/{}:DCS-CALIB_STRAIN_CLEAN_C01/".format(ifo,ifo))
 
     #general path is config_dir/triggers_ifo/merge/ifo:channel
-    trigger_dir = Path("./GLITCHES/triggers_{}/merge/{}:{}/".format(ifo, ifo, channel))
+    trigger_dir = Path("./glitches/triggers_{}/merge/{}:{}/".format(ifo, ifo, channel))
     print(trigger_dir)
     trigger_files = sorted(list(trigger_dir.glob("*.h5")))
 
