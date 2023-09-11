@@ -217,24 +217,9 @@ def run_batch(n):
 	
 	for i in range(n_templates * samples_per_batch):
 		t_templates[i] = get_fd_waveform(mass1 = batch_template_params[i,1], mass2 = batch_template_params[i,2], 
-				   		spin1z = 0, spin2z = 0,
+				   		spin1z = batch_template_params[i,3], spin2z = batch_template_params[i,4],
 						approximant = approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)[0].data[kmin:kmax]
-		  				#spin1z = batch_template_params[i,3], spin2z = batch_template_params[i,4],
-						
-
-	
-	#for i in range(n_templates * samples_per_batch):
-	#	temp = np.load(template_dir + "/"+ str(file_idx[i]) +".npy",mmap_mode='r')
-	#	t_templates.append(np.copy(temp[template_idx[i]][kmin:kmax]))
-
-	#template_load_time += time.time() - start
-
-	#t_templates = tf.convert_to_tensor(t_templates, dtype=tf.complex128)
-	
-	#file_idx = waveforms_per_file * (np.arange(n,n+samples_per_batch)//waveforms_per_file)
-	#waveform_idx = np.arange(n,n+samples_per_batch) % waveforms_per_file
-
-	#start = time.time()
+		  				#spin1z = 0, spin2z = 0,
 
 	#create this batch's strains
 	#TODO: optimise memory usage. we're creating the waveform and strain arrays separately, which is inefficient.

@@ -1,8 +1,13 @@
-#utilities for generating, saving and loading waveforms
+#utilities for generating, saving and loading waveforms. 
+#Also deals with loading template banks and picking templates from the banks.
 
 import numpy as np
 import scipy.stats as st
 import json
+from pycbc.tmpltbank.option_utils import metricParameters
+from pycbc.tmpltbank.coord_utils import get_point_distance
+
+import h5py
 
 def chirp_mass(m1,m2):
     return ((m1 * m2)**0.6)/ (m1 + m2)**0.2
@@ -18,6 +23,70 @@ def f_at_t(m1,m2,t):
     bottom = t*256*(np.pi**(8/3)) * ((6.67e-11)**(5/3)) *m1*m2 * 2e30 * 2e30
     
     return (top/bottom)**(3/8)
+
+
+
+def load_pybc_templates(bank_name, template_dir = "template_banks", pnOrder = "threePointFivePN", f_lower = 30, f_upper = 1024, deltaF = 0.01):
+    """Load a PyCBC template bank file, as well as the metric used to generate it.
+
+    Parameters
+    ----------
+    template_dir : str
+        Directory containing the template bank file.
+    bank_name : str
+        Name of the template bank file and the file containing the associated metricParams.
+    pnOrder : str
+        Post-Newtonian order used to generate the template bank.
+    f_lower : float
+        Lower frequency cutoff of the template bank. TODO: might not actually be used.
+    f_upper : float
+        Upper frequency cutoff of the template bank. Typically 1024 Hz.
+    deltaF : float
+        Frequency resolution of the template bank. Typically 0.01 Hz. 
+        Note this delta F is not necessarily the same as the delta F used in the SNR time series.
+    """
+
+    templates = np.loadtxt(template_dir + "/" + bank_name + ".txt", delimiter=",")
+    templates = templates[np.argsort(templates[:,0])]
+
+    f = h5py.File(template_dir + "/" + bank_name + "_intermediate.hdf", "r")
+
+    metricParams = metricParameters(pnOrder=pnOrder, fLow=f_lower, fUpper=f_upper, deltaF=deltaF)
+
+    metricParams.evals = {metricParams.fUpper: f["metric_evals"][()]}
+    metricParams.evecs = {metricParams.fUpper: f["metric_evecs"][()]}
+    metricParams.evecsCV = {metricParams.fUpper: f["cov_evecs"][()]}
+    
+    return templates, metricParams
+
+
+
+def choose_templates_new(templates, metricParams, n_templates, mass1, mass2, spin1z = 0, spin2z = 0, limit = 100):
+    """ Choose a set of templates from a PyCBC template bank using the template's metric.
+
+    Parameters
+    ---------- 
+    templates: array_like
+        A list of templates to choose from. columns should be [chirp mass, mass1, mass2, spin1z, spin2z]
+    metricParams: pycbc.tmpltbank.metricParameters that were generated using the same metric as the template bank
+    n_templates: int
+        Number of templates to choose.
+    limit: int
+        Maximum template index (sorted by distance) to consider. Templates are sleected randomly up to this limit."""
+    mismatches = get_point_distance(templates[:,1:5].T,[mass1,mass2,spin1z,spin2z],metricParams, list(metricParams.evecsCV.keys())[0])[0]
+
+    #get the template indexes sorted by distance
+    mismatches = np.argsort(mismatches)
+    #np.argsort(mismatches)[::skip][:n_templates]
+
+    #always return the best template first
+    ret = [mismatches[0]]
+    #append a random selection of the rest
+    ret.extend(np.random.choice(mismatches[1:limit], size = n_templates - 1, replace = False))
+    return ret
+
+
+
 
 def errfunc(mass1,mass2,m1true,m2true):
     #function for choosing a template which will produce a good match between the template and true waveform

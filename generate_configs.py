@@ -23,7 +23,7 @@ from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
 from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate
-from utils.waveform_utils import choose_templates
+from utils.waveform_utils import choose_templates, load_pybc_templates, choose_templates_new
 from utils.glitch_utils import get_glitchy_times, get_glitchy_gps_time
 from utils.noise_utils import generate_time_slides, get_valid_noise_times, load_psd
 import multiprocessing as mp
@@ -67,6 +67,7 @@ n_cpus = 20
 
 project_dir = "./configs/gaussian_test"
 noise_dir = './noise/test'
+template_bank = "PyCBC_98_aligned_spin"
 
 #noise_type should be either Gaussian or Real. If Gaussian, it will use the PSD saved from the noise directory.
 noise_type = "Gaussian"
@@ -275,6 +276,7 @@ if not os.path.exists(project_dir):
 
 #ADDING TEMPLATE BANK GENERATION HERE
 
+"""
 tmass1_min = 1
 tmass1_max = 3
 
@@ -312,7 +314,13 @@ print("Number of templates: ", len(templates))
 
 
 template_bank_params = np.load(project_dir+"/template_params.npy")
+"""
 
+template_bank_params, metricParams = load_pybc_templates(template_bank)
+
+np.save(project_dir+"/template_params.npy",template_bank_params)
+
+print("Number of templates: ", len(template_bank_params))	
 
 def constructPrior(
     prior: Union[Uniform, Cosine, UniformComovingVolume,PowerLaw,UniformSourceFrame], 
@@ -513,8 +521,11 @@ while generated_samples < n_signal_samples:
                 params[i]['mass1'], params[i]['mass2'] = params[i]['mass2'], params[i]['mass1']
 
             #choose template waveform(s) for this sample, and add them to params[i]
-            params[i]['template_waveforms'] = choose_templates(template_bank_params, params[i], 
-                                                               templates_per_waveform, template_selection_width)
+            #params[i]['template_waveforms'] = choose_templates(template_bank_params, params[i], 
+            #                                                   templates_per_waveform, template_selection_width)
+            params[i]['template_waveforms'] = choose_templates_new(template_bank_params, metricParams, 
+                                                                   templates_per_waveform, params[i]['mass1'], params[i]['mass2'], 
+                                                                   params[i]['spin1z'], params[i]['spin2z'])
 
             good_params.append(params[i])
 
