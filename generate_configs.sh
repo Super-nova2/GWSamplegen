@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=generate_configs
 #SBATCH --output=./logs/%x.log
-#SBATCH --cpus-per-task=20
+#SBATCH --ntasks=20
 #SBATCH --time=05:00:00
 #SBATCH --mem=20gb
 

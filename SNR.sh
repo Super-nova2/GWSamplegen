@@ -5,7 +5,7 @@
 #SBATCH --time=03:00:00
 #SBATCH --mem=110gb
 #SBATCH --gres=gpu:1
-#SBATCH --array=0
+#SBATCH --array=0-3
 
 #module load gcc/10.3.0
 #module load python/3.9.5
@@ -22,4 +22,4 @@ cd "/fred/oz016/alistair/GWSamplegen"
 
 echo done
 
-python asyncSNR.py --index=$SLURM_ARRAY_TASK_ID --totaljobs=$SLURM_ARRAY_TASK_COUNT --config-file=configs/real_background/args.json
+python asyncSNR.py --index=$SLURM_ARRAY_TASK_ID --totaljobs=$SLURM_ARRAY_TASK_COUNT --config-file=configs/Gaussian_newtemplates_small/args.json

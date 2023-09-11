@@ -88,6 +88,8 @@ if config_file:
 		n_signal_samples = config['n_signal_samples']
 		n_noise_samples = config['n_noise_samples']
 		ifos = config['detectors']
+		seconds_before = config['seconds_before']
+		seconds_after = config['seconds_after']
 		
 	if index == total_jobs - 1:
 		for key, value in config.items():
