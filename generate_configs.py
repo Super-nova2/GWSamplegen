@@ -316,7 +316,7 @@ print("Number of templates: ", len(templates))
 template_bank_params = np.load(project_dir+"/template_params.npy")
 """
 
-template_bank_params, metricParams = load_pybc_templates(template_bank)
+template_bank_params, metricParams, aXis = load_pybc_templates(template_bank)
 
 np.save(project_dir+"/template_params.npy",template_bank_params)
 
@@ -408,7 +408,6 @@ wavetime = 0
 
 max_waveform = 200
 SNR_thresh = 6
-f_thresh = 18
 
 if noise_type == "Real":
 
@@ -424,7 +423,7 @@ if noise_type == "Real":
     for ifo in detectors:
         
         glitchy, glitchless, freq = get_glitchy_times("noise/test/{}_glitches.npy".format(ifo),
-                                        waveform_length, valid_times, max_waveform, SNR_thresh, f_thresh, seconds_before, seconds_after)
+                                        waveform_length, valid_times, max_waveform, SNR_thresh, f_lower, seconds_before, seconds_after)
         
         glitchless_times[ifo] = glitchless
         glitchy_times[ifo] = glitchy
@@ -525,7 +524,7 @@ while generated_samples < n_signal_samples:
             #                                                   templates_per_waveform, template_selection_width)
             params[i]['template_waveforms'] = choose_templates_new(template_bank_params, metricParams, 
                                                                    templates_per_waveform, params[i]['mass1'], params[i]['mass2'], 
-                                                                   params[i]['spin1z'], params[i]['spin2z'])
+                                                                   params[i]['spin1z'], params[i]['spin2z'], aXis = aXis)
 
             good_params.append(params[i])
 
@@ -666,5 +665,5 @@ if n_signal_samples > 0:
         plt.hist(good_params_dict[detector+"_snr"][:n_signal_samples], bins = 100, alpha = 0.5)
 
     plt.xlabel("Injected SNR")
-    plt.xlim(0,30)
+    #plt.xlim(0,30)
     plt.savefig(project_dir+"/injected_SNR.png")

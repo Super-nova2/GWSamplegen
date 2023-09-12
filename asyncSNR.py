@@ -90,6 +90,7 @@ if config_file:
 		ifos = config['detectors']
 		seconds_before = config['seconds_before']
 		seconds_after = config['seconds_after']
+		f_lower = config['f_lower']
 		
 	if index == total_jobs - 1:
 		for key, value in config.items():

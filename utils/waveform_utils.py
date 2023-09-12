@@ -5,7 +5,7 @@ import numpy as np
 import scipy.stats as st
 import json
 from pycbc.tmpltbank.option_utils import metricParameters
-from pycbc.tmpltbank.coord_utils import get_point_distance
+from pycbc.tmpltbank.coord_utils import get_point_distance, get_cov_params
 
 import h5py
 
@@ -56,12 +56,28 @@ def load_pybc_templates(bank_name, template_dir = "template_banks", pnOrder = "t
     metricParams.evals = {metricParams.fUpper: f["metric_evals"][()]}
     metricParams.evecs = {metricParams.fUpper: f["metric_evecs"][()]}
     metricParams.evecsCV = {metricParams.fUpper: f["cov_evecs"][()]}
+
+    #also pre-load the templates in the xi parameter space for faster template selection later. use in choose_templates_new
+    aXis = get_cov_params(templates[:,1],templates[:,2],templates[:,3],templates[:,4],metricParams,metricParams.fUpper)
     
-    return templates, metricParams
+    return templates, metricParams, aXis
+
+def fast_point_distance(aXis, point2, metricParameters):
+    bMass1 = point2[0]
+    bMass2 = point2[1]
+    bSpin1 = point2[2]
+    bSpin2 = point2[3]
+
+    bXis = get_cov_params(bMass1, bMass2, bSpin1, bSpin2, metricParameters, metricParameters.fUpper)
+
+    dist = (aXis[0] - bXis[0])**2
+    for i in range(1,len(aXis)):
+        dist += (aXis[i] - bXis[i])**2
+
+    return dist
 
 
-
-def choose_templates_new(templates, metricParams, n_templates, mass1, mass2, spin1z = 0, spin2z = 0, limit = 100):
+def choose_templates_new(templates, metricParams, n_templates, mass1, mass2, spin1z = 0, spin2z = 0, limit = 100, aXis = None):
     """ Choose a set of templates from a PyCBC template bank using the template's metric.
 
     Parameters
@@ -72,8 +88,15 @@ def choose_templates_new(templates, metricParams, n_templates, mass1, mass2, spi
     n_templates: int
         Number of templates to choose.
     limit: int
-        Maximum template index (sorted by distance) to consider. Templates are sleected randomly up to this limit."""
-    mismatches = get_point_distance(templates[:,1:5].T,[mass1,mass2,spin1z,spin2z],metricParams, list(metricParams.evecsCV.keys())[0])[0]
+        Maximum template index (sorted by distance) to consider. Templates are sleected randomly up to this limit.
+    aXis: array_like
+        Pre-computed xi parameters for the templates. If not provided, they will be computed here. 
+        Use the aXis provided by load_pycbc_templates to significnatly speed up template selection."""
+    
+    if aXis is None:
+        mismatches = get_point_distance(templates[:,1:5].T,[mass1,mass2,spin1z,spin2z],metricParams, metricParams.fUpper)[0]
+    else:
+        mismatches = fast_point_distance(aXis, [mass1,mass2,spin1z,spin2z], metricParams)
 
     #get the template indexes sorted by distance
     mismatches = np.argsort(mismatches)

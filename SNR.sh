@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=SNR
 #SBATCH --output=./logs/%x_%a.log
+#SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
 #SBATCH --time=03:00:00
 #SBATCH --mem=110gb
 #SBATCH --gres=gpu:1
-#SBATCH --array=0-3
+#SBATCH --array=0-14
 
 #module load gcc/10.3.0
 #module load python/3.9.5
@@ -22,4 +23,4 @@ cd "/fred/oz016/alistair/GWSamplegen"
 
 echo done
 
-python asyncSNR.py --index=$SLURM_ARRAY_TASK_ID --totaljobs=$SLURM_ARRAY_TASK_COUNT --config-file=configs/Gaussian_newtemplates_small/args.json
+python asyncSNR.py --index=$SLURM_ARRAY_TASK_ID --totaljobs=$SLURM_ARRAY_TASK_COUNT --config-file=configs/Gaussian_newtemplates_train/args.json
