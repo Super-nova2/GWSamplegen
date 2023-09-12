@@ -309,7 +309,7 @@ for n in range(index*samples_per_file,(index+1)*samples_per_file,samples_per_bat
 			with tf.device('/GPU:0'):
 			
 				start = time.time()
-				if ifo == 'H1':
+				if ifo == ifos[0]:
 					t_templates = tf.convert_to_tensor(t_templates, dtype=tf.complex128)
 
 				strain = tf.convert_to_tensor(strains[ifo])
