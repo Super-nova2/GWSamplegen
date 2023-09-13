@@ -23,7 +23,7 @@ from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
 from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate
-from utils.waveform_utils import choose_templates, load_pybc_templates, choose_templates_new
+from utils.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new
 from utils.glitch_utils import get_glitchy_times, get_glitchy_gps_time
 from utils.noise_utils import generate_time_slides, get_valid_noise_times, load_psd
 import multiprocessing as mp
@@ -316,7 +316,7 @@ print("Number of templates: ", len(templates))
 template_bank_params = np.load(project_dir+"/template_params.npy")
 """
 
-template_bank_params, metricParams, aXis = load_pybc_templates(template_bank)
+template_bank_params, metricParams, aXis = load_pycbc_templates(template_bank)
 
 np.save(project_dir+"/template_params.npy",template_bank_params)
 
