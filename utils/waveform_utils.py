@@ -26,7 +26,7 @@ def f_at_t(m1,m2,t):
 
 
 
-def load_pybc_templates(bank_name, template_dir = "template_banks", pnOrder = "threePointFivePN", f_lower = 30, f_upper = 1024, deltaF = 0.01):
+def load_pycbc_templates(bank_name, template_dir = "template_banks", pnOrder = "threePointFivePN", f_lower = 30, f_upper = 1024, deltaF = 0.01):
     """Load a PyCBC template bank file, as well as the metric used to generate it.
 
     Parameters
@@ -91,7 +91,7 @@ def choose_templates_new(templates, metricParams, n_templates, mass1, mass2, spi
         Maximum template index (sorted by distance) to consider. Templates are sleected randomly up to this limit.
     aXis: array_like
         Pre-computed xi parameters for the templates. If not provided, they will be computed here. 
-        Use the aXis provided by load_pycbc_templates to significnatly speed up template selection."""
+        Use the aXis provided by load_pycbc_templates to significantly speed up template selection."""
     
     if aXis is None:
         mismatches = get_point_distance(templates[:,1:5].T,[mass1,mass2,spin1z,spin2z],metricParams, metricParams.fUpper)[0]
