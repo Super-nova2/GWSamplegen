@@ -23,9 +23,9 @@ from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
 from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate
-from utils.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new
-from utils.glitch_utils import get_glitchy_times, get_glitchy_gps_time
-from utils.noise_utils import generate_time_slides, get_valid_noise_times, load_psd
+from GWSamplegen.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new
+from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
+from GWSamplegen.noise_utils import generate_time_slides, get_valid_noise_times, load_psd
 import multiprocessing as mp
 import json
 import os

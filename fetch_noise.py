@@ -2,8 +2,8 @@ import os
 import h5py
 import numpy as np
 from gwpy.timeseries import TimeSeries, TimeSeriesDict
-from utils.mldatafind.find import find_data
-from utils.noise_utils import combine_seg_list, construct_noise_PSD, get_valid_noise_times
+from GWSamplegen.mldatafind.find import find_data
+from GWSamplegen.noise_utils import combine_seg_list, construct_noise_PSD, get_valid_noise_times
 import json
 
 #script to fetch noise data from GWOSC and save it to disk. Since this requires an internet connection, 

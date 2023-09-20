@@ -2,13 +2,13 @@ import os
 import numpy as np
 from typing import Iterator, List, Optional, Sequence, Tuple
 from pycbc.filter import highpass, lowpass
-from utils.noise_utils import get_valid_noise_times, load_noise, fetch_noise_loaded, load_psd
+from GWSamplegen.noise_utils import get_valid_noise_times, load_noise, fetch_noise_loaded, load_psd
 #rom pycbc.filter import matched_filter
 from pycbc.detector import Detector
 from pycbc.psd import interpolate, inverse_spectrum_truncation
 from pycbc.types import FrequencySeries
 from pycbc.types.timeseries import TimeSeries
-from utils.SNR_utils import array_matched_filter, tf_get_cutoff_indices
+from GWSamplegen.SNR_utils import array_matched_filter, tf_get_cutoff_indices
 import tensorflow as tf
 from pycbc.waveform import get_fd_waveform
 import pycbc.noise
@@ -131,7 +131,7 @@ psd = np.load(noise_dir + "/psd.npy")
 psds = {}
 t_psds = {}
 import matplotlib.pyplot as plt
-from utils.noise_utils import load_psd
+from GWSamplegen.noise_utils import load_psd
 
 psds = load_psd(noise_dir, duration, ifos, f_lower, int(1/delta_t))
 

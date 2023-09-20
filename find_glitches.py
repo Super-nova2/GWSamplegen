@@ -3,7 +3,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable, List
-from utils.mldatafind import authenticate
+from GWSamplegen.mldatafind import authenticate
 
 import h5py
 import numpy as np
