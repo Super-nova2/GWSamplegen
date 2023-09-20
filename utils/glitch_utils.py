@@ -46,7 +46,7 @@ def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_
 	glitchless_times = valid_times[mask]
 	glitchy_times = glitch
 
-	print("There are {} glitchy times and {} glitchless times in {}".format(len(glitchy_times), len(glitchless_times), glitch_file[:2]))
+	print("There are {} glitchy times and {} glitchless times in {}".format(len(glitchy_times), len(glitchless_times), glitch_file[-15:]))
 
 	return glitchy_times, glitchless_times, frequency_list#, glitch_idxs
 

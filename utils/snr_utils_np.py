@@ -121,7 +121,7 @@ def numpy_matched_filter(sample, template, psd, N, kmin, kmax, duration, delta_t
     flen = int(2048 / delta_f) + 1
 
     # Initialize _q output array
-    _q = np.zeros(N, dtype=sample.dtype)
+    #_q = np.zeros(N, dtype=sample.dtype)
 
     # Correlate waveform with template
     sample_template_correlated = np_correlate(template, sample)
@@ -130,7 +130,8 @@ def numpy_matched_filter(sample, template, psd, N, kmin, kmax, duration, delta_t
     sample_template_correlated /= psd
 
     # Pad row to desired length
-    paddings = [[0, 0], [kmin, _q.shape[0]-kmax]]
+    #paddings = [[0, 0], [kmin, _q.shape[0]-kmax]]
+    paddings = [[0, 0], [kmin, N-kmax]]
     sample_template_correlated = np.pad(sample_template_correlated, paddings, 'constant')
 
     sample_template_correlated = np.fft.ifft(sample_template_correlated)
@@ -145,3 +146,24 @@ def numpy_matched_filter(sample, template, psd, N, kmin, kmax, duration, delta_t
     snr_ts = snr_ts.astype(np.complex128)
 
     return snr_ts
+
+
+def mf_in_place(sample, psd, N, kmin, kmax, template_conj, template_norm):
+    """A more optimised version of numpy_matched_filter. By precomputing template_conj with np.conjugate(template), 
+    and template_norm with np_sigmasq we can speed it up by about 20%.
+    This is only useful if you are matching the SAME template array multiple times, such as in a background run.
+    """
+
+    sample *= template_conj
+
+    sample /= psd
+
+    # Pad row to desired length
+    paddings = [[0, 0], [kmin, N-kmax]]
+    sample = np.pad(sample, paddings, 'constant')
+
+    sample = np.fft.ifft(sample)
+    sample *= len(sample[0])
+
+
+    return sample * template_norm

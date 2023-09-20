@@ -8,7 +8,7 @@ noise/*
 
 !noise/segments/
 
-#configs contains all the generated waveforms
+#configs contains all the generated SNR time series
 
 configs/*
 
@@ -27,3 +27,25 @@ load*
 test.sh
 
 glitches
+
+build
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST

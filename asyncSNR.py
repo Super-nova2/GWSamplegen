@@ -71,7 +71,10 @@ samples_per_batch = 10
 
 #number of batches to process in parallel. determined by the available cores and memory.
 mp_batch = 10
-n_cpus = 10
+
+#n_cpus = 10
+#set n_cpus from os
+n_cpus = os.cpu_count()
 
 offset = np.min((offset*sample_rate, duration//2))
 
@@ -92,9 +95,8 @@ if config_file:
 		seconds_after = config['seconds_after']
 		f_lower = config['f_lower']
 		
-	if index == total_jobs - 1:
-		for key, value in config.items():
-			print(key, value)
+	for key, value in config.items():
+		print(key, value)
 
 samples_per_batch = min(100//(config['templates_per_waveform']),50)
 print("SAMPLES_PER_BATCH:",samples_per_batch)

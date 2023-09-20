@@ -1,0 +1,11 @@
+[project]
+name = "GWSamplegen"
+version = "0.1.0"
+authors = [
+	{name = "Alistair McLeod", email = "alistair.mcleod@research.uwa.edu.au"},
+	{name = "Damon Beveridge", email = "damon.beveridge@research.uwa.edu.au"},
+	]
+description = "A package for generating gravitational wave signals and SNR time series."
+
+[tool.setuptools]
+packages = ['utils']

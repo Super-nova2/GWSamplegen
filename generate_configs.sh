@@ -16,5 +16,5 @@ source /home/amcleod/.bashrc
 
 cd "/fred/oz016/alistair/GWSamplegen"
 
-python generate_configs.py --config-file=args.json
+python generate_configs.py --config-file=configs/real_train_full/args.json
 #--config-file=configs/test1/args.json

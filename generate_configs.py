@@ -406,7 +406,7 @@ iteration = 0
 
 wavetime = 0
 
-max_waveform = 200
+max_waveform = 100
 SNR_thresh = 6
 
 if noise_type == "Real":
@@ -422,7 +422,7 @@ if noise_type == "Real":
 
     for ifo in detectors:
         
-        glitchy, glitchless, freq = get_glitchy_times("noise/test/{}_glitches.npy".format(ifo),
+        glitchy, glitchless, freq = get_glitchy_times(noise_dir+"/{}_glitches.npy".format(ifo),
                                         waveform_length, valid_times, max_waveform, SNR_thresh, f_lower, seconds_before, seconds_after)
         
         glitchless_times[ifo] = glitchless
