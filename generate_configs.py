@@ -439,6 +439,9 @@ if noise_type == "Real":
     for ifo in detectors:
         time_list = [glitchy_times[i] if i == ifo else glitchless_times[i] for i in detectors]
         one_glitch_generator[ifo] = generate_time_slides(time_list, min_separation)
+    
+    if len(detectors) == 2:
+        two_glitch_generator = generate_time_slides([glitchy_times[ifo] for ifo in detectors], min_separation)
 
 
 
@@ -457,18 +460,44 @@ while generated_samples < n_signal_samples:
 
     if noise_type == "Real":
         for i in range(waveforms_per_batch):
-            if np.random.uniform(0,1) < glitch_frac:
-                glitchy_ifo = np.random.choice(detectors)
-                p[glitchy_ifo + '_glitch'][i] = True
-                glitch_time = list(next(one_glitch_generator[glitchy_ifo]))
-                glitch_idx = np.where(glitch_time[detectors.index(glitchy_ifo)] == glitchy_times[glitchy_ifo])[0][0]
-                #TODO: shift glitch based on template masses, rather than true masses?
-                glitch_time[detectors.index(glitchy_ifo)] = get_glitchy_gps_time(valid_times, p['mass1'][i], p['mass2'][i], 
-                                                                                glitch_time[detectors.index(glitchy_ifo)], glitchy_freqs[glitchy_ifo][glitch_idx])
-                p['gps'].append(glitch_time)            
-                #gps.append(next(one_glitch_generator[glitchy_ifo]))
+
+            #TODO: generalise to 3+ detectors. For now, works fine for one or two detectors.
+            #also clean this code up, there's too many nested if statements for my liking.
+            if isinstance(glitch_frac, list):
+                for j in range(len(glitch_frac)):
+                    if np.random.uniform(0,1) < glitch_frac[j]:
+                        p[detectors[j] + '_glitch'][i] = True
+                    
+                if np.all([p[det + "_glitch"][i] for det in detectors]):
+                    glitch_time = list(next(two_glitch_generator))
+                    for j in range(len(detectors)):
+                        glitch_idx = np.where(glitch_time[j] == glitchy_times[detectors[j]])[0][0]
+                        glitch_time[j] = get_glitchy_gps_time(valid_times, p['mass1'][i], p['mass2'][i], 
+                                                        glitch_time[j], glitchy_freqs[detectors[j]][glitch_idx])
+                
+                else:
+                    glitchy_ifo = np.where([p[det + "_glitch"][i] for det in detectors])[0][0]
+                    glitch_time = list(next(one_glitch_generator[detectors[glitchy_ifo]]))
+                    glitch_idx = np.where(glitch_time[glitchy_ifo] == glitchy_times[detectors[glitchy_ifo]])[0][0]
+                    glitch_time[glitchy_ifo] = get_glitchy_gps_time(valid_times, p['mass1'][i], p['mass2'][i],
+                                                                    glitch_time[glitchy_ifo], glitchy_freqs[detectors[glitchy_ifo]][glitch_idx])
+                
+                p['gps'].append(glitch_time)
+
             else:
-                p['gps'].append(list(next(glitchless_generator)))
+                if np.random.uniform(0,1) < glitch_frac:
+                    #if the glitch fraction is a float, each detector has an equal chance of having the glitch
+                    glitchy_ifo = np.random.choice(detectors)
+                    p[glitchy_ifo + '_glitch'][i] = True
+                    glitch_time = list(next(one_glitch_generator[glitchy_ifo]))
+                    glitch_idx = np.where(glitch_time[detectors.index(glitchy_ifo)] == glitchy_times[glitchy_ifo])[0][0]
+                    #TODO: shift glitch based on template masses, rather than true masses?
+                    glitch_time[detectors.index(glitchy_ifo)] = get_glitchy_gps_time(valid_times, p['mass1'][i], p['mass2'][i], 
+                                                                                    glitch_time[detectors.index(glitchy_ifo)], glitchy_freqs[glitchy_ifo][glitch_idx])
+                    p['gps'].append(glitch_time)            
+                    #gps.append(next(one_glitch_generator[glitchy_ifo]))
+                else:
+                    p['gps'].append(list(next(glitchless_generator)))
     
     #otherwise, just choose some random GPS times from valid_times
     #TODO: adapt code to work with Gaussian noise without requiring a directory of real noise

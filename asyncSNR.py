@@ -74,7 +74,9 @@ mp_batch = 10
 
 #n_cpus = 10
 #set n_cpus from os
-n_cpus = os.cpu_count()
+n_cpus = int(os.environ['SLURM_CPUS_PER_TASK'])
+print("n_cpus:",n_cpus)
+
 
 offset = np.min((offset*sample_rate, duration//2))
 
@@ -167,24 +169,6 @@ SNR_time = 0
 convert_time = 0
 repeat_time = 0
 
-#def read_file_mp(args):
-#	temp = np.load(template_dir + "/" + str(args[0]) +".npy", mmap_mode='r')
-#	return np.copy(temp[args[1]][kmin:kmax])
-
-#pool = mp.Pool(processes = 10)
-
-#def read_file_mp2(args):
-#	file_idx, template_ids, i = args
-#	temp = np.load(template_dir + "/"+ str(file_idx) +".npy", mmap_mode='r')
-#	ret = []
-#	for id in template_ids:
-#		ret.append(np.copy(temp[id][kmin:kmax]))
-#	return (ret,i)
-
-#def get_fd_waveform(args):
-#    return get_fd_waveform(mass1 = args[1], mass2 = args[2], spin1z = args[3], spin2z = args[4],
-#            approximant = approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)[0].data
-
 from pycbc.waveform import get_td_waveform
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
@@ -243,10 +227,6 @@ def run_batch(n):
 			noise = fetch_noise_loaded(segments,duration,gps[n+i],sample_rate,paths)
 
 		if params["injection"][n+i]:
-			#TODO: speed up file loading, as the batch's waveforms should be in 1 or 2 files.
-			#with np.load(config_dir + "/"+str(file_idx[i])+".npz") as data:
-
-			#	temp = data['arr_'+str(waveform_idx[i])]
 			
 			args = {'mass1': params['mass1'][n+i], 'mass2': params['mass2'][n+i],
 	   				'spin1z': params['spin1z'][n+i], 'spin2z': params['spin2z'][n+i],	
@@ -256,7 +236,6 @@ def run_batch(n):
 			
 			temp = get_projected_waveform_mp(args)
 						
-			#changed temp to temp[i]
 			for ifo in ifos:
 				#this shouldn't be used, waveforms should be shorter than the noise.
 				w_len = np.min([len(temp[ifos.index(ifo)]), duration*sample_rate//2])
@@ -286,13 +265,9 @@ def run_batch(n):
 	return (t_templates, strains)
 
 
-
-#for n in range(0,samples_per_file,samples_per_batch*mp_batch):
 for n in range(index*samples_per_file,(index+1)*samples_per_file,samples_per_batch*mp_batch):
 	#print("batch:", n//samples_per_batch)
 	#print(n)
-	#for i in range(0,samples_per_file,samples_per_batch*mp_batch):
-	#print("starting batches",[j for j in range(n,min(n+mp_batch*samples_per_batch, samples_per_file),samples_per_batch)])
 	end = min(n+mp_batch*samples_per_batch, (index+1)*samples_per_file)
 
 	print("starting batches",[j for j in range(n,end,samples_per_batch)])
@@ -328,12 +303,6 @@ for n in range(index*samples_per_file,(index+1)*samples_per_file,samples_per_bat
 			fp[ifos.index(ifo)][(i)*n_templates*samples_per_batch + n_templates*n:(i+1)*n_templates*samples_per_batch + n_templates*n] = \
 				x[:,len(x[0])//2-seconds_before*sample_rate+offset:len(x[0])//2+seconds_after*sample_rate+offset]
 
-#nthreads = 10
-
-#with ThreadPoolExecutor(max_workers=nthreads) as exc:
-#	for n in range(0,samples_per_file, samples_per_batch):
-#		print("batch:", n//samples_per_batch)
-#		exc.submit(run_batch,n)
 
 
 print("template time + waveform load + convert:", template_time)

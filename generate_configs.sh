@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=configs
+#SBATCH --job-name=configs4
 #SBATCH --output=./logs/%x.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
@@ -16,5 +16,5 @@ source /home/amcleod/.bashrc
 
 cd "/fred/oz016/alistair/GWSamplegen"
 
-python generate_configs.py --config-file=configs/real_train_full/args.json
+python generate_configs.py --config-file=args.json
 #--config-file=configs/test1/args.json
