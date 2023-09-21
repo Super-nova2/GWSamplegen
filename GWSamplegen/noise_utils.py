@@ -1,3 +1,19 @@
+"""
+============
+Functions for fetching, loading and selecting noise segments.
+============
+
+`load_noise` loads a directory of noise into memory.
+
+`get_valid_noise_times` is a multipurpose function for returning a list of GPS times to inject samples into, and a list of sorted file paths.
+
+`load_psd` loads the PSD of each interferometer from a noise directory.
+
+`fetch_noise_loaded` fetches noise segments from a list of noise files loaded into memory.
+
+`generate_time_slides` generates a list of time slides from a list of noise segments (vital if you want to generate more than ~10000 samples).
+"""
+
 import os
 import numpy as np
 from typing import Iterator, List, Optional, Sequence, Tuple
@@ -16,24 +32,11 @@ noise_path = "../real_noise/"
 
 
 #TODO: handle arbitrary groups of interferometers. Assume each noise file in a dir has the same ifos
-
-#function to retrieve valid start times for injecting gravitational wave samples into. 
-
-"""
-def load_noise_paths(
-	noise_dir: str
-) -> List[str]:
-	
-	paths = os.listdir(noise_dir)
-	paths = [path for path in paths if len(path.split("-")) == 3]
-	paths = [noise_dir + path for path in paths]
-	
-	return paths
-"""
 	
 def get_valid_noise_times(
 	noise_dir: str,
 	noise_len: int,
+	min_step: int = 1,
 	start_time: int = None,
 	end_time: int = None,
 ) -> (List[int], np.ndarray, List[str]):
@@ -95,7 +98,11 @@ def get_valid_noise_times(
 
 		#print(path[1], path[2])
 
-		times = np.arange(path[1], path[1]+path[2] - noise_len)
+		times = np.arange(path[1], path[1]+path[2] - noise_len, min_step)
+		if path[1] + path[2] - noise_len not in times:
+
+			times = np.append(times, path[1] + path[2] - noise_len)
+
 		valid_times = np.concatenate((valid_times,times))
 
 		if start_time is not None and end_time is not None:

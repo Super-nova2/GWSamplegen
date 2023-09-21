@@ -469,22 +469,29 @@ while generated_samples < n_signal_samples:
                         p[detectors[j] + '_glitch'][i] = True
                     
                 if np.all([p[det + "_glitch"][i] for det in detectors]):
+                    #2 detector glitches
                     glitch_time = list(next(two_glitch_generator))
                     for j in range(len(detectors)):
                         glitch_idx = np.where(glitch_time[j] == glitchy_times[detectors[j]])[0][0]
                         glitch_time[j] = get_glitchy_gps_time(valid_times, p['mass1'][i], p['mass2'][i], 
                                                         glitch_time[j], glitchy_freqs[detectors[j]][glitch_idx])
                 
-                else:
+                elif np.any([p[det + "_glitch"][i] for det in detectors]):
+                    #1 detector glitch
                     glitchy_ifo = np.where([p[det + "_glitch"][i] for det in detectors])[0][0]
                     glitch_time = list(next(one_glitch_generator[detectors[glitchy_ifo]]))
                     glitch_idx = np.where(glitch_time[glitchy_ifo] == glitchy_times[detectors[glitchy_ifo]])[0][0]
                     glitch_time[glitchy_ifo] = get_glitchy_gps_time(valid_times, p['mass1'][i], p['mass2'][i],
                                                                     glitch_time[glitchy_ifo], glitchy_freqs[detectors[glitchy_ifo]][glitch_idx])
                 
+                else:
+                    #no glitches
+                    glitch_time = list(next(glitchless_generator))
+
                 p['gps'].append(glitch_time)
 
             else:
+                #TODO: this is legacy code, and should be removed once it won't cause issues
                 if np.random.uniform(0,1) < glitch_frac:
                     #if the glitch fraction is a float, each detector has an equal chance of having the glitch
                     glitchy_ifo = np.random.choice(detectors)
@@ -566,6 +573,7 @@ while generated_samples < n_signal_samples:
             print("SNR threshold looks good, {}% of samples meet the threshold.".format(round(generated_samples/waveforms_per_batch*100)))
     print(len(good_params))
 
+
 print('done samples with injections')
 
 #save the injection parameters to a file
@@ -573,7 +581,7 @@ print('done samples with injections')
 if n_signal_samples > 0:
     good_params_dict = {key: np.array([good_params[i][key] for i in range(len(good_params))][:n_signal_samples]) for key in good_params[0].keys()}
 
-
+np.save(project_dir+"/"+"params.npy", good_params_dict)
 
 
 #generate noise samples. most of the parameters aren't used, but the masses are used to choose the templates.
@@ -599,17 +607,46 @@ if n_noise_samples > 0:
 
 
         if noise_type == "Real":
-            if np.random.uniform(0,1) < glitch_frac:
-                glitchy_ifo = np.random.choice(detectors)
-                noise_p[glitchy_ifo + '_glitch'][i] = True
-                glitch_time = list(next(one_glitch_generator[glitchy_ifo]))
-                glitch_idx = np.where(glitch_time[detectors.index(glitchy_ifo)] == glitchy_times[glitchy_ifo])[0][0]
-                glitch_time[detectors.index(glitchy_ifo)] = get_glitchy_gps_time(valid_times, noise_p['mass1'][i], noise_p['mass2'][i], 
-                                                                                    glitch_time[detectors.index(glitchy_ifo)], glitchy_freqs[glitchy_ifo][glitch_idx])
-                noise_p['gps'].append(glitch_time)            
-                #noise_p['gps'].append(next(one_glitch_generator[glitchy_ifo]))
+
+            if isinstance(glitch_frac, list):
+                for j in range(len(glitch_frac)):
+                    if np.random.uniform(0,1) < glitch_frac[j]:
+                        noise_p[detectors[j] + '_glitch'][i] = True
+                    
+                if np.all([noise_p[det + "_glitch"][i] for det in detectors]):
+                    #2 detector glitches
+                    glitch_time = list(next(two_glitch_generator))
+                    for j in range(len(detectors)):
+                        glitch_idx = np.where(glitch_time[j] == glitchy_times[detectors[j]])[0][0]
+                        glitch_time[j] = get_glitchy_gps_time(valid_times, noise_p['mass1'][i], noise_p['mass2'][i], 
+                                                        glitch_time[j], glitchy_freqs[detectors[j]][glitch_idx])
+                
+                elif np.any([noise_p[det + "_glitch"][i] for det in detectors]):
+                    #1 detector glitch
+                    glitchy_ifo = np.where([noise_p[det + "_glitch"][i] for det in detectors])[0][0]
+                    glitch_time = list(next(one_glitch_generator[detectors[glitchy_ifo]]))
+                    glitch_idx = np.where(glitch_time[glitchy_ifo] == glitchy_times[detectors[glitchy_ifo]])[0][0]
+                    glitch_time[glitchy_ifo] = get_glitchy_gps_time(valid_times, noise_p['mass1'][i], noise_p['mass2'][i],
+                                                                    glitch_time[glitchy_ifo], glitchy_freqs[detectors[glitchy_ifo]][glitch_idx])
+                
+                else:
+                    #no glitches
+                    glitch_time = list(next(glitchless_generator))
+
+                noise_p['gps'].append(glitch_time)
+            
             else:
-                noise_p['gps'].append(list(next(glitchless_generator)))
+                if np.random.uniform(0,1) < glitch_frac:
+                    glitchy_ifo = np.random.choice(detectors)
+                    noise_p[glitchy_ifo + '_glitch'][i] = True
+                    glitch_time = list(next(one_glitch_generator[glitchy_ifo]))
+                    glitch_idx = np.where(glitch_time[detectors.index(glitchy_ifo)] == glitchy_times[glitchy_ifo])[0][0]
+                    glitch_time[detectors.index(glitchy_ifo)] = get_glitchy_gps_time(valid_times, noise_p['mass1'][i], noise_p['mass2'][i], 
+                                                                                        glitch_time[detectors.index(glitchy_ifo)], glitchy_freqs[glitchy_ifo][glitch_idx])
+                    noise_p['gps'].append(glitch_time)            
+                    #noise_p['gps'].append(next(one_glitch_generator[glitchy_ifo]))
+                else:
+                    noise_p['gps'].append(list(next(glitchless_generator)))
         
         else:
             noise_p['gps'] = np.random.choice(valid_times, size = (n_noise_samples, len(detectors)))

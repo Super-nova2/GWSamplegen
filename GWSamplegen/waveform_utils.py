@@ -1,3 +1,14 @@
+"""
+=========================================
+Utilities for generating, saving and loading injection and template waveforms.
+=========================================
+
+
+
+"""
+
+
+
 #utilities for generating, saving and loading waveforms. 
 #Also deals with loading template banks and picking templates from the banks.
 
