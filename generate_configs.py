@@ -25,7 +25,7 @@ from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate
 from GWSamplegen.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new
 from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
-from GWSamplegen.noise_utils import generate_time_slides, get_valid_noise_times, load_psd
+from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd#, generate_time_slide
 import multiprocessing as mp
 import json
 import os
@@ -433,15 +433,15 @@ if noise_type == "Real":
     #create timeslide generators
     min_separation = 3
 
-    glitchless_generator = generate_time_slides([glitchless_times[ifo] for ifo in detectors], min_separation)
+    glitchless_generator = two_det_timeslide([glitchless_times[ifo] for ifo in detectors], min_separation)
     one_glitch_generator = {}
 
     for ifo in detectors:
         time_list = [glitchy_times[i] if i == ifo else glitchless_times[i] for i in detectors]
-        one_glitch_generator[ifo] = generate_time_slides(time_list, min_separation)
+        one_glitch_generator[ifo] = two_det_timeslide(time_list, min_separation)
     
     if len(detectors) == 2:
-        two_glitch_generator = generate_time_slides([glitchy_times[ifo] for ifo in detectors], min_separation)
+        two_glitch_generator = two_det_timeslide([glitchy_times[ifo] for ifo in detectors], min_separation)
 
 
 

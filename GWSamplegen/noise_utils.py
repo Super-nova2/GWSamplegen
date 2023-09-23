@@ -183,7 +183,28 @@ def generate_time_slides(detector_data, min_distance):
 
 	
 
+def two_det_timeslide(detector_data, min_distance):
+	used_combinations = set()
 
+	data_lengths = [len(data) for data in detector_data]
+	divisor = data_lengths[1] 
+	min_length = min(data_lengths)
+	max_combos = (min_length - (min_distance - 1)) * (min_length - min_distance)
+	while True:
+		idx = np.random.randint(0,np.product(data_lengths))
+		sample_indicies = (idx//divisor, idx%divisor)
+
+		# Limits the number of possible samples we draw from the generator
+		if len(used_combinations) == max_combos:
+			print("No more unique combinations available.")
+			return
+
+		if abs(detector_data[0][sample_indicies[0]] - detector_data[1][sample_indicies[1]]) >= min_distance:
+			if sample_indicies not in used_combinations:
+
+				used_combinations.add(sample_indicies)
+				#yield sample_indicies
+				yield (detector_data[0][sample_indicies[0]], detector_data[1][sample_indicies[1]])
 
 
 #utilities for downloading noise for later use
