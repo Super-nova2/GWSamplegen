@@ -6,51 +6,26 @@ Generate compact binary merger samples in real LIGO noise
 
 This is a collection of templates of SLURM job submission files so that there is no issues with multiple users in future commits.
 
-### `SNR.sh` - Run data generation job
+### `SNR.sh` - Run SNR generation job. Change the job array size as 
 
 ```
 #!/bin/bash
-#SBATCH --job-name=SNR_gen
-#SBATCH --output=generate_SNR.log
-#SBATCH --cpus-per-task=20
-#SBATCH --time=20:00:00
-#SBATCH --mem=200gb
-#SBATCH --gres=gpu:1
-
-module load gcc/10.3.0
-module load python/3.9.5
-module load cudnn/8.4.1.50-cuda-11.7.0
-
-source /fred/oz016/alistair/nt_env/bin/activate
-
-cd "/fred/oz016/alistair/GWSamplegen"
-
-#python SNR_series.py
-python generate_configs.py
-
-echo done
-
-python asyncSNR.py
-```
-
-### `fetch_noise.sh` - Download noise data from GWOSC
-
-```
-#!/bin/bash
-#SBATCH --job-name=fetch_noise
-#SBATCH --output=fetch_noise.log
+#SBATCH --job-name=SNR
+#SBATCH --output=./logs/%x_%a.log
 #SBATCH --ntasks=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --time=00:10:00
-#SBATCH --mem-per-cpu=10gb
+#SBATCH --cpus-per-task=10
+#SBATCH --time=06:00:00
+#SBATCH --mem=110gb
+#SBATCH --gres=gpu:1
+#SBATCH --array=0-9
 
-source /fred/oz016/alistair/nt_env/bin/activate
+source <your bashrc or virtual environment>
 
-cd /fred/oz016/alistair/GWSamplegen
+cd "/path/to/GWSamplegen"
 
 echo starting job
 
-python fetch_noise.py
+python asyncSNR.py --index=$SLURM_ARRAY_TASK_ID --totaljobs=$SLURM_ARRAY_TASK_COUNT --config-file=configs/your_config_file/args.json
 ```
 
 ### `generate_configs.sh` - Generate config file needed to generate dataset
@@ -58,21 +33,23 @@ python fetch_noise.py
 ```
 #!/bin/bash
 #SBATCH --job-name=generate_configs
-#SBATCH --output=generate_configs.log
+#SBATCH --output=./logs/%x.log
+#SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
-#SBATCH --time=04:00:00
+#SBATCH --time=05:00:00
 #SBATCH --mem=20gb
 
-module load gcc/10.3.0
-module load python/3.9.5
-module load cudnn/8.4.1.50-cuda-11.7.0
+#module load gcc/10.3.0
+#module load python/3.9.5
+#module load cudnn/8.4.1.50-cuda-11.7.0
 
-source /fred/oz016/alistair/nt_env/bin/activate
+source <your bashrc or virtual environment>
 
-cd "/fred/oz016/alistair/GWSamplegen"
+cd "/path/to/GWSamplegen"
 
-python generate_configs.py
+python generate_configs.py --config-file=args.json
 ```
+
 
 ### `bank.sh` - Generate template bank waveforms (DEPRECATED)
 
