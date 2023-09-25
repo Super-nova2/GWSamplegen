@@ -18,7 +18,7 @@ configs/*
 **.ipynb
 
 **__pycache__**
-logs
+#logs
 
 load*
 
@@ -49,3 +49,4 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+generate_configs.sh
