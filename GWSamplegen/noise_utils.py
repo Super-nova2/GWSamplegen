@@ -26,9 +26,7 @@ import json
 
 import time
 #length of noise the waveform is injected into. for BNS, I use 1000 seconds
-noise_len = 1000
 
-noise_path = "../real_noise/"
 
 
 #TODO: handle arbitrary groups of interferometers. Assume each noise file in a dir has the same ifos
