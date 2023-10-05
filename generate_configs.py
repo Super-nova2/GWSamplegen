@@ -80,7 +80,7 @@ n_noise_samples = 0
 #noise_frac = 0.5
 glitch_frac = 0.0
 
-approximant = "SpinTaylorT4"
+td_approximant = "SpinTaylorT4"
 f_lower = 18
 delta_t = 1/2048
 
@@ -99,7 +99,7 @@ detector_snr_threshold = 4
 #but the first template chosen will be guaranteed to have a high overlap with the waveform.
 templates_per_waveform = 1
 
-template_approximant = "TaylorF2"
+fd_approximant = "TaylorF2"
 #when we select templates to match with the waveform, we select from a distribution of templates, but have to ensure
 #that the template has at least some overlap with the waveform. for BBH signals you can use a width up to 0.05-0.1,
 #but for BNS signals you should use a width of 0.02 or less as they are more sensitive to chirp mass.
@@ -206,7 +206,8 @@ if config_file:
         noise_dir = config['noise_dir']
         noise_type = config['noise_type']
         templates_per_waveform = config['templates_per_waveform']
-        approximant = config['approximant']
+        td_approximant = config['td_approximant']
+        fd_approximant = config['fd_approximant']
         f_lower = config['f_lower']
         delta_t = config['delta_t']
         waveform_length = config['duration']
@@ -274,47 +275,9 @@ with open(noise_dir + '/args.json') as f:
 if not os.path.exists(project_dir):
     os.mkdir(project_dir)
 
-#ADDING TEMPLATE BANK GENERATION HERE
-
-"""
-tmass1_min = 1
-tmass1_max = 3
-
-tmass2_min = 1
-tmass2_max = 3
-
-q_min = 0.0
-q_max = 1.0
-
-#rather than selecting for spins, we scale the template spins by a factor. set to 0 for no spins, 1 for full spins
-spin_scale = 1
-
-#templates are stored in the form: chirp mass, mass 1, mass 2, spin 1z, spin 2z
-templates = np.load("template_banks/GSTLal_templates.npy")
-
-#select only templates that are within the specified range
-
-templates = templates[(templates[:,1] >= tmass1_min) & (templates[:,1] <= tmass1_max) & (templates[:,2] >= tmass2_min) & 
-    (templates[:,2] <= tmass2_max) & (templates[:,2]/templates[:,1] >= q_min) & (templates[:,2]/templates[:,1] <= q_max)]
-
-templates[:,3] *= spin_scale
-templates[:,4] *= spin_scale
-
-#sort the templates by chirp mass
-templates = templates[templates[:,0].argsort()]
-
-#save the template waveform params and waveform generation args for future reference
-np.save(project_dir+"/template_params.npy",templates)
-
-
-#with open(main_dir+bank_dir+"/template_args.json", 'w') as fp:
-#    json.dump(args, fp, sort_keys=False, indent=4)
-
-print("Number of templates: ", len(templates))	
-
-
-template_bank_params = np.load(project_dir+"/template_params.npy")
-"""
+#loading a bank of pre-generated templates. TODO: handle multiple ways of selecting templates.
+#For BNS templates, PyCBC's geom_aligned_spin is a good choice as it produces transformation matrices for template selection,
+#but requires the TaylorF2 metric which isn't accurate for BBH. 
 
 template_bank_params, metricParams, aXis = load_pycbc_templates(template_bank)
 
@@ -379,7 +342,7 @@ def get_snr(args):
     hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
                              spin1z = args['spin1z'], spin2z = args['spin2z'],
                              inclination = args['i'], distance = args['d'],
-                             approximant = approximant, f_lower = f_lower, delta_t = delta_t)
+                             approximant = td_approximant, f_lower = f_lower, delta_t = delta_t)
     
     snrs = {}
 
@@ -406,7 +369,15 @@ iteration = 0
 
 wavetime = 0
 
-max_waveform = 100
+#get longest waveform in template bank. As the templates are sorted by chirp mass, this will be the first template.
+hp, _ = get_td_waveform(mass1 = template_bank_params[0,1], mass2 = template_bank_params[0,2], 
+						delta_t = delta_t, f_lower = f_lower, approximant = td_approximant)
+#TODO: maybe replace with the t_at_f function 
+
+max_waveform_length = len(hp) * delta_t + 1 #adding a safety factor of 1 second
+max_waveform_length = max(12, int(np.ceil(max_waveform_length/10)*10)) #rounding up to the nearest 10 seconds / setting to 12 for BBHs
+print("max waveform length: ", max_waveform_length)
+
 SNR_thresh = 6
 
 if noise_type == "Real":
@@ -423,7 +394,7 @@ if noise_type == "Real":
     for ifo in detectors:
         
         glitchy, glitchless, freq = get_glitchy_times(noise_dir+"/{}_glitches.npy".format(ifo),
-                                        waveform_length, valid_times, max_waveform, SNR_thresh, f_lower, seconds_before, seconds_after)
+                                        waveform_length, valid_times, max_waveform_length, SNR_thresh, f_lower, seconds_before, seconds_after)
         
         glitchless_times[ifo] = glitchless
         glitchy_times[ifo] = glitchy
@@ -675,7 +646,8 @@ args = {"seed": seed,
             "noise_dir": noise_dir,
             "noise_type": noise_type,
             "templates_per_waveform": templates_per_waveform,
-            "approximant": approximant,
+            "td_approximant": td_approximant,
+            "fd_approximant": fd_approximant,
             "f_lower": f_lower,
             "delta_t": delta_t,
             "duration": waveform_length,

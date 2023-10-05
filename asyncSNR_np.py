@@ -45,7 +45,7 @@ sample_rate = int(1/delta_t)
 f_lower = 18.0
 delta_f = 1/duration
 f_final = duration
-approximant = 'TaylorF2'
+fd_approximant = 'TaylorF2'
 td_approximant = "SpinTaylorT4"
 
 ifos = ['H1', 'L1']
@@ -54,7 +54,7 @@ seconds_before = 100
 seconds_after = 400
 offset = 0
 
-fname = 'SNR_np.npy'
+fname = 'SNR.npy'
 
 project_dir = "./configs/train1"
 noise_dir = "./noise/test"
@@ -89,7 +89,8 @@ if config_file:
 		project_dir = config['project_dir']
 		noise_dir = config['noise_dir']
 		seed = config['seed']
-		
+		fd_approximant = config['fd_approximant']
+		td_approximant = config['td_approximant']
 		noise_type = config['noise_type']
 		n_signal_samples = config['n_signal_samples']
 		n_noise_samples = config['n_noise_samples']
@@ -173,6 +174,8 @@ SNR_time = 0
 convert_time = 0
 repeat_time = 0
 
+import gc
+
 from pycbc.waveform import get_td_waveform
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
@@ -211,7 +214,7 @@ def run_batch(n):
 	for i in range(n_templates * samples_per_batch):
 		t_templates[i] = get_fd_waveform(mass1 = batch_template_params[i,1], mass2 = batch_template_params[i,2], 
 				   		spin1z = batch_template_params[i,3], spin2z = batch_template_params[i,4],
-						approximant = approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)[0].data[kmin:kmax]
+						approximant = fd_approximant, f_lower = f_lower, delta_f = delta_f, f_final = f_final)[0].data[kmin:kmax]
 		  				#spin1z = 0, spin2z = 0,
 
 	#create this batch's strains
@@ -297,6 +300,9 @@ for n in range(index*samples_per_file,(index+1)*samples_per_file,samples_per_bat
 
 			fp[ifos.index(ifo)][(i)*n_templates*samples_per_batch + n_templates*n:(i+1)*n_templates*samples_per_batch + n_templates*n] = results[i][ifo]
 
+	#garbage collect
+	del results
+	gc.collect()
 
 
 print("template time + waveform load + convert:", template_time)
