@@ -24,10 +24,10 @@ def chirp_mass(m1,m2):
     return ((m1 * m2)**0.6)/ (m1 + m2)**0.2
 
 def t_at_f(m1,m2,f):
-	top = 5 * ((3e8)**5) * (((m1+m2)*2e30)**(1/3))
-	bottom = (f**(8/3))*256*(np.pi**(8/3)) * ((6.67e-11)**(5/3)) *m1*m2 * 2e30 * 2e30
-	
-	return (top/bottom)
+	top = 5 * ((3e8)**5) * (((m1+m2)*1.99e30)**(1/3))
+	bottom = (f**(8/3))*256*(np.pi**(8/3)) * ((6.67e-11)**(5/3)) *m1*m2 * 1.99e30 * 1.99e30
+	#adding a 1% fudge factor as it's better to overestimate the time than underestimate it for the purpose of avoiding glitches
+	return 1.01*(top/bottom) 
 
 def f_at_t(m1,m2,t):
     top = 5 * ((3e8)**5) * (((m1+m2)*2e30)**(1/3))

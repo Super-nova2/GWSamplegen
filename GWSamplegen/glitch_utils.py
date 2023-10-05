@@ -5,15 +5,17 @@ from .waveform_utils import t_at_f
 
 
 def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_cutoff = 5, freq_cutoff = 0, seconds_before = 1, seconds_after = 1):
-
+	"""
+	Given a list of valid times and a glitch file from find_glitches.py, return a list of glitchy times and glitchless times.
+	"""
 	#longest_waveform is the rough length of the longest waveform in seconds
 	glitch_data = np.load(glitch_file, allow_pickle=True).item()
 
 	glitch_array = np.array([glitch_data['time'], glitch_data['frequency'], glitch_data['snr'], 
 				glitch_data['tstart'], glitch_data['tend'], glitch_data['fstart'], glitch_data["fend"]]).T
 
-	# select only times with SNR and frequency above cutoff
-	glitch_array = glitch_array[(glitch_array[:,2] > SNR_cutoff) & (glitch_array[:,1] > freq_cutoff)]
+	# select only times with SNR and frequency above cutoff. It is important to consider the end frequency of the glitch, not just the peak frequency.
+	glitch_array = glitch_array[(glitch_array[:,2] > SNR_cutoff) & (glitch_array[:,6] > freq_cutoff)]
 
 	no_glitch = np.array([])
 	glitch = np.array([])
@@ -30,7 +32,8 @@ def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_
 
 		if include in valid_times:
 			glitch = np.hstack((glitch, include))
-			frequency_list = np.hstack((frequency_list, glitch_array[i,1]))
+			#deal with the edge case where the peak glitch frequency is below the cutoff
+			frequency_list = np.hstack((frequency_list, max(glitch_array[i,1], freq_cutoff))) 
 			glitch_idxs.append(i)
 		
 	no_glitch = np.unique(no_glitch)
