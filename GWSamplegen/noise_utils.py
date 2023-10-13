@@ -25,8 +25,6 @@ from pycbc.psd import interpolate, inverse_spectrum_truncation
 import json
 
 import time
-#length of noise the waveform is injected into. for BNS, I use 1000 seconds
-
 
 
 #TODO: handle arbitrary groups of interferometers. Assume each noise file in a dir has the same ifos
@@ -111,6 +109,13 @@ def get_valid_noise_times(
 	paths = paths[np.argsort(paths[:,1])]
 
 	valid_times = np.sort(valid_times)
+	
+	#remove any GPS times that are too close to detected events
+	#TODO: add some way of specifying the event list that isn't just my folder
+	gps_blacklist = np.loadtxt("/fred/oz016/alistair/GWSamplegen/noise/segments/gps_blacklist.txt")
+	n_blacklisted = len(np.where(np.isin(valid_times, gps_blacklist-noise_len//2))[0])
+	print("{} GPS times are too close to detected events and have been removed".format(n_blacklisted))
+	valid_times = np.delete(valid_times, np.where(np.isin(valid_times, gps_blacklist-noise_len//2)))
 
 	#reconstruct the file paths from the start times and ifo_list
 	file_list = [noise_dir +"/"+ ifo_list +"-"+ path[1] +"-"+ path[2] +".npy" for path in paths]

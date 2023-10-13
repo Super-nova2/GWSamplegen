@@ -143,7 +143,7 @@ def numpy_matched_filter(sample, template, psd, N, kmin, kmax, duration, delta_t
     # Rescale SNR timeseries
     snr_ts = sample_template_correlated * template_norm
 
-    snr_ts = snr_ts.astype(np.complex128)
+    snr_ts = snr_ts.astype(np.complex64)
 
     return snr_ts
 
