@@ -25,7 +25,7 @@ from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate
 from GWSamplegen.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new
 from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
-from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd#, generate_time_slide
+from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd
 import multiprocessing as mp
 import json
 import os
@@ -67,6 +67,7 @@ n_cpus = 20
 
 project_dir = "./configs/gaussian_test"
 noise_dir = './noise/test'
+#TODO: add template_bank to args file and make it compatible with BBH
 template_bank = "PyCBC_98_aligned_spin"
 
 #noise_type should be either Gaussian or Real. If Gaussian, it will use the PSD saved from the noise directory.

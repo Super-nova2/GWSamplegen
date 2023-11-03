@@ -44,9 +44,10 @@ ifo_1 = '/fred/oz016/alistair/GWSamplegen/noise/segments/H1_O3a.txt'
 ifo_2 = '/fred/oz016/alistair/GWSamplegen/noise/segments/L1_O3a.txt'
 
 
-#doing the whole of O3
+#start of O3: 1238166018
+#second week of O3 start: 1238770818
 
-start = 1238166018
+start = 1239375618
 end = start + 60*60*24*7
 
 #1239150592 is some time in O3, a bit after GW190425
@@ -61,7 +62,6 @@ print(segs)
 #data = find_data(segs, ifos)
 
 #channelname = ":GDS-CALIB_STRAIN"
-channelname = ""
 channelname = ""
 
 #channelname = ":DCS-CALIB_STRAIN_CLEAN-SUB60HZ_C01"
@@ -165,7 +165,7 @@ def split_segment(
 #save sample_rate, min_duration and ifos to a json file
 
 args = {
-    "sample_rate": 1.0/sample_rate,
+    "delta_t": 1.0/sample_rate,
     "min_duration": min_duration,
     "detectors": ifos,
     "start_time": start,

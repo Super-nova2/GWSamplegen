@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
 #SBATCH --time=05:00:00
-#SBATCH --mem=20gb
+#SBATCH --mem=10gb
 
 #module load gcc/10.3.0
 #module load python/3.9.5
@@ -14,5 +14,5 @@ source /home/amcleod/.bashrc
 
 cd "/fred/oz016/alistair/GWSamplegen"
 
-python generate_configs.py --config-file=args2.json
+python generate_configs.py --config-file=args.json
 #--config-file=configs/test1/args.json

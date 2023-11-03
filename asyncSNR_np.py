@@ -33,10 +33,6 @@ config_file = args.config_file
 
 print("NOW STARTING JOB",index,"OF",total_jobs)
 
-#Ideas for speedup:
-#smaller sized template bank files. not sure this is necessary since we are using a memmap
-#do ALL tf operations on GPU, including converting the templates to tensors.
-
 
 #defining some configs. some of these need to come from config files in the future.
 duration = 1024
