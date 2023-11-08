@@ -17,20 +17,19 @@
 #duration of noise to fetch?
 
 import argparse
+import multiprocessing as mp
+import json
+import os
+import time
+from typing import TYPE_CHECKING, Optional, Union
+
 import numpy as np
+
 from pycbc.filter import sigma
 from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
 from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate
-from GWSamplegen.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new
-from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
-from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd
-import multiprocessing as mp
-import json
-import os
-
-import time
 
 from bilby.core.prior import (
     ConditionalPowerLaw,
@@ -44,9 +43,94 @@ from bilby.core.prior import (
     Sine,
     Uniform,
 )
-
 from bilby.gw.prior import UniformComovingVolume, UniformSourceFrame
-from typing import TYPE_CHECKING, Optional, Union
+
+from GWSamplegen.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new
+from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
+from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd
+
+
+def constructPrior(
+    prior: Union[Uniform, Cosine, UniformComovingVolume,PowerLaw,UniformSourceFrame], 
+    min: float, 
+    max: float,
+    **kwargs
+) -> PriorDict:
+    #generic constructor for bilby priors. 
+    
+    if prior == PowerLaw:
+        kwargs['alpha'] = powerlaw_alpha
+
+    if max <= min:
+        return max
+    else:
+        return prior(minimum = min, maximum = max, **kwargs)
+    
+    
+def get_snr(args):
+    
+    hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
+                             spin1z = args['spin1z'], spin2z = args['spin2z'],
+                             inclination = args['i'], distance = args['d'],
+                             approximant = td_approximant, f_lower = f_lower, delta_t = delta_t)
+    
+    snrs = {}
+
+    for detector in detectors:
+        f_plus, f_cross = all_detectors[detector].antenna_pattern(
+            right_ascension=args['ra'], declination=args['dec'],
+            polarization=args['pol'],
+            t_gps=args['gps'][0])
+        
+        detector_signal = f_plus * hp + f_cross * hc
+
+        snr = sigma(htilde=detector_signal,
+                    psd=interpolate(psds[detector], delta_f=detector_signal.delta_f),
+                    low_frequency_cutoff=f_lower)
+        
+        snrs[detector] = snr
+
+    return snrs
+
+
+def get_template(task):
+    if task[0][1] + task[0][2] <= 4:  # This is the number quoted for PyCBC in GWTC-3
+        approx = "TaylorF2"
+    else:
+        approx = "SEOBNRv4_ROM"
+        
+    hp, _ = get_td_waveform(
+        mass1=task[0][1],
+        mass2=task[0][2],
+        spin1z=task[0][3],
+        spin2z=task[0][4],
+        distance=100,
+        f_lower=task[2],
+        approximant=approx,
+        delta_t=task[1]
+    )
+    hp.prepend_zeros(WAVEFORM_LENGTH/task[1] - len(hp.data))
+    hp_fs = hp.to_frequencyseries()
+    
+    return hp_fs.data
+
+
+def do_match(task):
+    args = task[0]
+    h1, l1 = get_projected_waveform(args)
+    h1_fs = TimeSeries(h1, delta_t=args["delta_t"]).to_frequencyseries()
+    
+    overlaps = []
+    templates = template_waveforms[task[1]:task[2]]
+    for template in templates:
+        x = match(h1_fs, FrequencySeries(template, delta_f=h1_fs.delta_f))
+        overlaps.append(x[0])
+        
+    if task[3]%1000 == 0:
+        print(f"Completed {task[3]} injections", flush=True)
+    
+    return [overlaps, args["mchirp"], task[1], task[2]]
+
 
 
 #import args from a config file if it exists
@@ -69,6 +153,11 @@ project_dir = "./configs/gaussian_test"
 noise_dir = './noise/test'
 #TODO: add template_bank to args file and make it compatible with BBH
 template_bank = "PyCBC_98_aligned_spin"
+bank_type = "pycbc
+
+template_bank = "./template_banks/bank_5-100.npy"
+bank_type = "spiir"
+template_range = 100
 
 #noise_type should be either Gaussian or Real. If Gaussian, it will use the PSD saved from the noise directory.
 noise_type = "Gaussian"
@@ -280,33 +369,25 @@ if not os.path.exists(project_dir):
 #For BNS templates, PyCBC's geom_aligned_spin is a good choice as it produces transformation matrices for template selection,
 #but requires the TaylorF2 metric which isn't accurate for BBH. 
 
-template_bank_params, metricParams, aXis = load_pycbc_templates(template_bank)
+if bank_type == "pycbc":
+    template_bank_params, metricParams, aXis = load_pycbc_templates(template_bank)
+    np.save(project_dir+"/template_params.npy",template_bank_params)
+    print("Number of templates: ", len(template_bank_params))	
+elif bank_type == "spiir":
+    template_bank_params = np.load(template_bank)
+    np.save(project_dir+"/template_params.npy", arr=template_bank_params)
+    print("Number of templates: ", len(template_bank_params))	
+else:
+    print(f"Invalid template bank type: {bank_type}")
+    print("Program exiting...")
+    exit()
 
-np.save(project_dir+"/template_params.npy",template_bank_params)
 
-print("Number of templates: ", len(template_bank_params))	
-
-def constructPrior(
-    prior: Union[Uniform, Cosine, UniformComovingVolume,PowerLaw,UniformSourceFrame], 
-    min: float, 
-    max: float,
-    **kwargs
-) -> PriorDict:
-    #generic constructor for bilby priors. 
-    
-    if prior == PowerLaw:
-        kwargs['alpha'] = powerlaw_alpha
-
-    if max <= min:
-        return max
-    else:
-        return prior(minimum = min, maximum = max, **kwargs)
 
 
 
 #set a seed to ensure reproducibility
 np.random.seed(seed)
-
 
 prior = PriorDict()
 
@@ -338,31 +419,6 @@ psds = load_psd(noise_dir, waveform_length, detectors, f_lower, int(1/delta_t))
 
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
-def get_snr(args):
-    
-    hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
-                             spin1z = args['spin1z'], spin2z = args['spin2z'],
-                             inclination = args['i'], distance = args['d'],
-                             approximant = td_approximant, f_lower = f_lower, delta_t = delta_t)
-    
-    snrs = {}
-
-    for detector in detectors:
-        f_plus, f_cross = all_detectors[detector].antenna_pattern(
-            right_ascension=args['ra'], declination=args['dec'],
-            polarization=args['pol'],
-            t_gps=args['gps'][0])
-        
-        detector_signal = f_plus * hp + f_cross * hc
-
-        snr = sigma(htilde=detector_signal,
-                    psd=interpolate(psds[detector], delta_f=detector_signal.delta_f),
-                    low_frequency_cutoff=f_lower)
-        
-        snrs[detector] = snr
-
-    return snrs
-
 good_params = []
 
 generated_samples = 0
@@ -376,7 +432,7 @@ hp, _ = get_td_waveform(mass1 = template_bank_params[0,1], mass2 = template_bank
 #TODO: maybe replace with the t_at_f function 
 
 max_waveform_length = len(hp) * delta_t + 1 #adding a safety factor of 1 second
-max_waveform_length = max(12, int(np.ceil(max_waveform_length/10)*10)) #rounding up to the nearest 10 seconds / setting to 12 for BBHs
+max_waveform_length = max(16, int(np.ceil(max_waveform_length/10)*10)) #rounding up to the nearest 10 seconds / setting to 12 for BBHs
 print("max waveform length: ", max_waveform_length)
 
 SNR_thresh = 6
@@ -505,6 +561,8 @@ while generated_samples < n_signal_samples:
 
         #snrs is a list of dicts, where each dict is {detector: snr}
         snrs = pool.map(get_snr, params)
+        pool.close()
+        pool.join()
         #mp_waveforms is a list of lists, where each list is [waveform, snrs]
         
     wavetime += time.time() - start
@@ -528,12 +586,56 @@ while generated_samples < n_signal_samples:
                 params[i]['mass1'], params[i]['mass2'] = params[i]['mass2'], params[i]['mass1']
 
             #choose template waveform(s) for this sample, and add them to params[i]
-            #params[i]['template_waveforms'] = choose_templates(template_bank_params, params[i], 
-            #                                                   templates_per_waveform, template_selection_width)
-            params[i]['template_waveforms'] = choose_templates_new(template_bank_params, metricParams, 
-                                                                   templates_per_waveform, params[i]['mass1'], params[i]['mass2'], 
-                                                                   params[i]['spin1z'], params[i]['spin2z'], aXis = aXis)
-
+            if bank_type == "pycbc":
+                #params[i]['template_waveforms'] = choose_templates(template_bank_params, params[i], 
+                #                                                   templates_per_waveform, template_selection_width)
+                params[i]['template_waveforms'] = choose_templates_new(template_bank_params, metricParams, 
+                                                                       templates_per_waveform, params[i]['mass1'], params[i]['mass2'], 
+                                                                       params[i]['spin1z'], params[i]['spin2z'], aXis = aXis)
+    
+    # Sample template for non-pycbc bank (ie. using match)
+    if bank_type == "spiir":
+        # load template bank waveforms to memory
+        with mp.Pool(processes=n_cpus) as pool:
+            template_waveforms = pool.map(get_template, [all_params, delta_t, f_lower])
+            pool.close()
+            pool.join()
+        template_waveforms = np.copy(template_waveforms)
+        
+        # organise tasks for getting overlaps of templates on each injection
+        template_tasks = []
+        for i in range(len(params)):
+            cm = chirp_mass(params[i]['mass1'], params[i]['mass2'])
+            inj_args = {
+                "mchirp": cm, "mass1": params[i]["mass1"], "mass2": params[i]["mass2"],
+                "spin1z": params[i]["spin1z"], "spin2z": params[i]["spin2z"],
+                "i": params[i]["i"], "ra": params[i]["ra"], "dec": params[i]["dec"],
+                "pol": params[i]["pol"], "approx": "SEOBNRv4_ROM", "d": 100,
+                "gps": [1238166018], "f_low": f_lower, "delta_t": delta_t
+            }
+            arg_closest = (np.abs(template_bank_params[:,0] - cm)).argmin()
+            minimum = max(arg_closest - template_range, 0)
+            maximum = min(arg_closest + template_range, len(template_bank_params[:,0]))
+            
+            template_tasks.append([inj_args, minimum, maximum, i])
+        
+        # get overlap of bank subsets with each injection
+        print("Running multiprocessing to sample templates for each injection")
+        t_task = time.time()
+        with mp.Pool(processes=n_cpus) as pool:
+            overlaps = pool.map(do_match, tasks)
+            pool.close()
+            pool.join()
+        print(f"Time for multiprocessing of all tasks: {time.time() - t_task} seconds")
+        
+        # I want functionality to do the following eventually:
+        # 1. Sample templates that return any level of overlap from the set of templates
+        # 2. Sample templates such that they all have a net network SNR > 6 or some threshold based on overlap * optimal network_snr
+        # 3. Sample templates with any overlap, but use that to label ones with net network snr < 6 as noise instead of injection samples
+        
+        
+    
+    for i in range(len(snrs)):
             good_params.append(params[i])
 
     generated_samples = len(good_params)

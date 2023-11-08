@@ -175,12 +175,22 @@ import gc
 from pycbc.waveform import get_td_waveform
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
-def get_projected_waveform_mp(args):
+def get_projected_waveform_mp(args, waveform_duration=None):
 	
 	hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
 							 spin1z = args['spin1z'], spin2z = args['spin2z'],
 							 inclination = args['i'], distance = args['d'],
 							 approximant = td_approximant, f_lower = f_lower, delta_t = delta_t)
+    
+    if waveform_duration is not None:
+        hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
+							 spin1z = args['spin1z'], spin2z = args['spin2z'],
+							 inclination = args['i'], distance = args['d'],
+							 approximant = args['approx'], f_lower = args["f_low"], delta_t = args["delta_t"])
+        hp.prepend_zeros(int(waveform_duration/args["delta_t"]) - len(hp.data))
+        hc.prepend_zeros(int(waveform_duration/args["delta_t"]) - len(hc.data))
+        hp = TimeSeries(hp, delta_t=args["delta_t"])
+        hc = TimeSeries(hc, delta_t=args["delta_t"])
 	
 	waveforms = np.empty(shape=(len(ifos), len(hp)))
 
