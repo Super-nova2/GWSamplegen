@@ -25,10 +25,10 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 
-from pycbc.filter import sigma
+from pycbc.filter import sigma, match
 from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
-from pycbc.types import FrequencySeries
+from pycbc.types import FrequencySeries, TimeSeries
 from pycbc.psd import interpolate
 
 from bilby.core.prior import (
@@ -45,9 +45,10 @@ from bilby.core.prior import (
 )
 from bilby.gw.prior import UniformComovingVolume, UniformSourceFrame
 
-from GWSamplegen.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new
+from GWSamplegen.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new, chirp_mass
 from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
 from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd
+from asyncSNR_np import get_projected_waveform_mp
 
 
 def constructPrior(
@@ -98,6 +99,11 @@ def get_template(task):
         approx = "TaylorF2"
     else:
         approx = "SEOBNRv4_ROM"
+
+    # if chirp_mass(task[0][1], task[0][2]) < 1.73:  # This is the number quoted for GstLAL in GWTC-3
+    #     approx = 'TaylorF2'
+    # else:
+    #     approx = "SEOBNRv4_ROM"
         
     hp, _ = get_td_waveform(
         mass1=task[0][1],
@@ -109,27 +115,50 @@ def get_template(task):
         approximant=approx,
         delta_t=task[1]
     )
-    hp.prepend_zeros(WAVEFORM_LENGTH/task[1] - len(hp.data))
+    hp.prepend_zeros(task[3]/task[1] - len(hp.data))
     hp_fs = hp.to_frequencyseries()
     
     return hp_fs.data
 
 
-def do_match(task):
+def get_match(task):
     args = task[0]
-    h1, l1 = get_projected_waveform(args)
+    h1, l1 = get_projected_waveform_mp(args, waveform_duration=args["duration"])
     h1_fs = TimeSeries(h1, delta_t=args["delta_t"]).to_frequencyseries()
     
     overlaps = []
-    templates = template_waveforms[task[1]:task[2]]
-    for template in templates:
+    templates = np.copy(task[1])
+    for key, template in enumerate(templates):
         x = match(h1_fs, FrequencySeries(template, delta_f=h1_fs.delta_f))
-        overlaps.append(x[0])
+        overlaps.append([x[0], task[2]+key])
+        
+    overlaps = sorted(overlaps, key=lambda x:x[0])
         
     if task[3]%1000 == 0:
-        print(f"Completed {task[3]} injections", flush=True)
+        print(f"Completed {task[4]} injections", flush=True)
     
-    return [overlaps, args["mchirp"], task[1], task[2]]
+    return overlaps
+
+
+def choose_templates_match(overlaps, n_templates):
+    """ Choose a set of templates from a bank that uses the PyCBC `match` function to calculate template overlaps.
+    Currently only selecting the highest overlap template and the rest are randomly sampled.
+    
+    Parameters
+    ----------
+    overlaps: array_like
+        A list of lists, which one list per injection samples containing the template indexes and respective overlaps with the injection.
+    n_templates: int
+        Number of templates to choose for each injection."""
+    
+    templates = []
+    for i in overlaps:
+        indexes = np.copy(i)[:,1]
+        temp = [indexes[0]]
+        temp.extend(np.random.choice(indexes[1:], size=n_templates-1, replace=False))
+        templates.append(temp)
+    
+    return templates
 
 
 
@@ -153,7 +182,7 @@ project_dir = "./configs/gaussian_test"
 noise_dir = './noise/test'
 #TODO: add template_bank to args file and make it compatible with BBH
 template_bank = "PyCBC_98_aligned_spin"
-bank_type = "pycbc
+bank_type = "pycbc"
 
 template_bank = "./template_banks/bank_5-100.npy"
 bank_type = "spiir"
@@ -432,8 +461,12 @@ hp, _ = get_td_waveform(mass1 = template_bank_params[0,1], mass2 = template_bank
 #TODO: maybe replace with the t_at_f function 
 
 max_waveform_length = len(hp) * delta_t + 1 #adding a safety factor of 1 second
-max_waveform_length = max(16, int(np.ceil(max_waveform_length/10)*10)) #rounding up to the nearest 10 seconds / setting to 12 for BBHs
+max_waveform_length = max(32, int(np.ceil(max_waveform_length/10)*10)) #rounding up to the nearest 10 seconds / setting to 12 for BBHs
 print("max waveform length: ", max_waveform_length)
+if waveform_length < 2*max_waveform_length:
+    print(f"Desired waveform_length of {waveform_length} seconds for generating samples is less than two times the max_waveform_length of {max_waveform_length} seconds of your injection parameter space. This will mean that samples positioned at the middle of your sample will encounter issues due to filter wrap around in matched filtering.")
+    print("Please fix the waveform_length input parameter.")
+    exit()
 
 SNR_thresh = 6
 
@@ -597,7 +630,7 @@ while generated_samples < n_signal_samples:
     if bank_type == "spiir":
         # load template bank waveforms to memory
         with mp.Pool(processes=n_cpus) as pool:
-            template_waveforms = pool.map(get_template, [all_params, delta_t, f_lower])
+            template_waveforms = pool.map(get_template, [template_bank_params, delta_t, f_lower, waveform_length])
             pool.close()
             pool.join()
         template_waveforms = np.copy(template_waveforms)
@@ -610,29 +643,34 @@ while generated_samples < n_signal_samples:
                 "mchirp": cm, "mass1": params[i]["mass1"], "mass2": params[i]["mass2"],
                 "spin1z": params[i]["spin1z"], "spin2z": params[i]["spin2z"],
                 "i": params[i]["i"], "ra": params[i]["ra"], "dec": params[i]["dec"],
-                "pol": params[i]["pol"], "approx": "SEOBNRv4_ROM", "d": 100,
-                "gps": [1238166018], "f_low": f_lower, "delta_t": delta_t
+                "pol": params[i]["pol"], "approx": td_approximant, "d": 100,
+                "gps": [params[i]["gps"]], "f_low": f_lower, "delta_t": delta_t,
+                "duration": waveform_length
             }
             arg_closest = (np.abs(template_bank_params[:,0] - cm)).argmin()
             minimum = max(arg_closest - template_range, 0)
             maximum = min(arg_closest + template_range, len(template_bank_params[:,0]))
             
-            template_tasks.append([inj_args, minimum, maximum, i])
+            template_tasks.append([inj_args, template_waveforms[minimum:maximum], minimum, maximum, i])
         
         # get overlap of bank subsets with each injection
         print("Running multiprocessing to sample templates for each injection")
         t_task = time.time()
         with mp.Pool(processes=n_cpus) as pool:
-            overlaps = pool.map(do_match, tasks)
+            overlaps = pool.map(get_match, template_tasks)
             pool.close()
             pool.join()
         print(f"Time for multiprocessing of all tasks: {time.time() - t_task} seconds")
+        
+        templates = choose_templates_match(overlaps, templates_per_waveform)
         
         # I want functionality to do the following eventually:
         # 1. Sample templates that return any level of overlap from the set of templates
         # 2. Sample templates such that they all have a net network SNR > 6 or some threshold based on overlap * optimal network_snr
         # 3. Sample templates with any overlap, but use that to label ones with net network snr < 6 as noise instead of injection samples
         
+        for i in range(len(params)):
+            params[i]['template_waveforms'] = templates[i]
         
     
     for i in range(len(snrs)):
