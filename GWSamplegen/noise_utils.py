@@ -194,7 +194,7 @@ def two_det_timeslide(detector_data, min_distance):
 	min_length = min(data_lengths)
 	max_combos = (min_length - (min_distance - 1)) * (min_length - min_distance)
 	while True:
-		idx = np.random.randint(0,np.product(data_lengths))
+		idx = np.random.randint(0,np.prod(data_lengths))
 		sample_indicies = (idx//divisor, idx%divisor)
 
 		# Limits the number of possible samples we draw from the generator

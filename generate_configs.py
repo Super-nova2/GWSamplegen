@@ -30,6 +30,7 @@ from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
 from pycbc.types import FrequencySeries, TimeSeries
 from pycbc.psd import interpolate
+from pycbc.inject.inject import legacy_approximant_name
 
 from bilby.core.prior import (
     ConditionalPowerLaw,
@@ -50,17 +51,19 @@ from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
 from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd
 from asyncSNR_np import get_projected_waveform_mp
 
+from astropy.utils import iers
+iers.conf.auto_download = False
 
 def constructPrior(
-    prior: Union[Uniform, Cosine, UniformComovingVolume,PowerLaw,UniformSourceFrame], 
+    prior: Union[Uniform, Cosine, UniformComovingVolume, PowerLaw, UniformSourceFrame], 
     min: float, 
     max: float,
     **kwargs
 ) -> PriorDict:
     #generic constructor for bilby priors. 
     
-    if prior == PowerLaw:
-        kwargs['alpha'] = powerlaw_alpha
+    # if prior == PowerLaw:
+    #     kwargs['alpha'] = powerlaw_alpha
 
     if max <= min:
         return max
@@ -115,13 +118,19 @@ def get_template(task):
         approximant=approx,
         delta_t=task[1]
     )
-    hp.prepend_zeros(task[3]/task[1] - len(hp.data))
+    hp.prepend_zeros(int(task[3]/task[1] - len(hp.data)))
     hp_fs = hp.to_frequencyseries()
     
     return hp_fs.data
 
 
 def get_match(task):
+    # if task[4] == 0:
+    #     print(task[0], flush=True)
+    #     print(np.shape(task[1]), flush=True)
+    #     print(task[2], flush=True)
+    #     print(task[3], flush=True)
+    #     print(task[4], flush=True)
     args = task[0]
     h1, l1 = get_projected_waveform_mp(args, waveform_duration=args["duration"])
     h1_fs = TimeSeries(h1, delta_t=args["delta_t"]).to_frequencyseries()
@@ -133,9 +142,6 @@ def get_match(task):
         overlaps.append([x[0], task[2]+key])
         
     overlaps = sorted(overlaps, key=lambda x:x[0])
-        
-    if task[3]%1000 == 0:
-        print(f"Completed {task[4]} injections", flush=True)
     
     return overlaps
 
@@ -159,6 +165,33 @@ def choose_templates_match(overlaps, n_templates):
         templates.append(temp)
     
     return templates
+
+
+# Function from LVC Rates & Populations Group
+def powerlaw_setup(minv, maxv, alpha):
+    a = (maxv / minv) ** (alpha + 1.) - 1.
+    b = 1. / (alpha + 1.)
+    return a, b
+
+
+# Function from LVC Rates & Populations Group
+def powerlaw_sample(x_rand, minv, a, b):
+    return minv * (1. + a * x_rand) ** b
+
+
+# Function from LVC Rates & Populations Group
+def draw_mass_pair_power(m1_min, m1_max, m2_min, m2_max, m1pow, m2pow):
+    a1, b1 = powerlaw_setup(m1_min, m1_max, m1pow)
+    while True:
+        x1 = np.random.random()
+        x2 = np.random.random()
+        m1 = powerlaw_sample(x1, m1_min, a1, b1)
+        if m2_max < m1:
+            a2, b2 = powerlaw_setup(m2_min, m2_max, m2pow)
+        else:
+            a2, b2 = powerlaw_setup(m2_min, m1, m2pow)
+        m2 = powerlaw_sample(x2, m2_min, a2, b2)
+        yield m1, m2
 
 
 
@@ -230,13 +263,15 @@ template_selection_width = 0.01
 
 
 #alpha value to be used for power law priors
-powerlaw_alpha = -3.0
+# powerlaw_alpha = -3.0
 
 #Prior functions to use for component masses.
 #For an astrophysical BBH distribution, use Powerlaw
 #For a BNS distribution, use Uniform (TODO implement Gaussian)
 mass1prior = Uniform
 mass2prior = Uniform
+mass1_power = -2.35
+mass2_power = 1
 
 mass1_min = 1.4#1.0
 mass1_max = 1.4#2.6
@@ -322,6 +357,7 @@ if config_file:
         n_noise_samples = config['n_noise_samples']
         glitch_frac = config['glitch_frac']
         project_dir = config['project_dir']
+        bank_type = config['bank_type']
         noise_dir = config['noise_dir']
         noise_type = config['noise_type']
         templates_per_waveform = config['templates_per_waveform']
@@ -335,9 +371,11 @@ if config_file:
         detectors = config['detectors']
         network_snr_threshold = config['network_snr_threshold']
         detector_snr_threshold = config['detector_snr_threshold']
-        powerlaw_alpha = config['powerlaw_alpha']
+        # powerlaw_alpha = config['powerlaw_alpha']
         mass1prior = eval(config['mass1prior'])
         mass2prior = eval(config['mass2prior'])
+        mass1_power = config['mass1_power']
+        mass2_power = config['mass2_power']
         mass1_min = config['mass1_min']
         mass1_max = config['mass1_max']
         mass2_min = config['mass2_min']
@@ -390,7 +428,6 @@ with open(noise_dir + '/args.json') as f:
 
 
 
-
 if not os.path.exists(project_dir):
     os.mkdir(project_dir)
 
@@ -420,8 +457,13 @@ np.random.seed(seed)
 
 prior = PriorDict()
 
-prior['mass1'] = constructPrior(mass1prior, mass1_min, mass1_max)
-prior['mass2'] = constructPrior(mass2prior, mass2_min, mass2_max)
+# IF YOU ARE USING DIFFERENT PRIOR DISTRIBUTIONS FOR M1 AND M2, MAKE SURE YOU KNOW WHAT YOU ARE DOING.
+# CURRENTLY, M1 AND M2 ARE SWAPPED IF M2 IS SAMPLED ABOVE M1, WHICH ONLY WORKS WHEN THEY USE THE SAME
+# DISTRIBUTION. IF USING DIFFERENT DISTRIBUTIONS (EG. POWER LAW), BE CAREFUL AND TEST THIS CODE FIRST.
+if mass1prior != PowerLaw:
+    prior['mass1'] = constructPrior(mass1prior, mass1_min, mass1_max)
+    prior['mass2'] = constructPrior(mass2prior, mass2_min, mass2_max)
+
 prior['spin1z'] = constructPrior(spin1zprior, spin1z_min, spin1z_max)
 prior['spin2z'] = constructPrior(spin2zprior, spin2z_min, spin2z_max)
 
@@ -435,11 +477,9 @@ prior['pol'] = constructPrior(pol_prior, pol_min * np.pi *2, pol_max * np.pi *2)
 if d_eff_scaling:
     prior['d_eff'] = constructPrior(d_eff_prior, d_eff_min, d_eff_max, name = 'luminosity_distance')
 
-
 valid_times, _, _ = get_valid_noise_times(noise_dir,waveform_length)
 
 print(len(valid_times), "GPS times available")
-
 
 #load PSD 
 
@@ -455,9 +495,12 @@ iteration = 0
 
 wavetime = 0
 
+# get correct PyCBC waveform
+approx_name, approx_phase_order = legacy_approximant_name(td_approximant)
+
 #get longest waveform in template bank. As the templates are sorted by chirp mass, this will be the first template.
-hp, _ = get_td_waveform(mass1 = template_bank_params[0,1], mass2 = template_bank_params[0,2], 
-						delta_t = delta_t, f_lower = f_lower, approximant = td_approximant)
+hp, _ = get_td_waveform(mass1=template_bank_params[0,1], mass2=template_bank_params[0,2], 
+						delta_t=delta_t, f_lower=f_lower, approximant=approx_name, phase_order=approx_phase_order)
 #TODO: maybe replace with the t_at_f function 
 
 max_waveform_length = len(hp) * delta_t + 1 #adding a safety factor of 1 second
@@ -506,10 +549,42 @@ if noise_type == "Real":
 
 
 
+
+
+# organise tasks for getting template waveforms
+print(f"Shape of template_bank_params: {np.shape(template_bank_params)}")
+template_tasks = []
+for i in range(len(template_bank_params)):
+    template_tasks.append([template_bank_params[i, :], delta_t, f_lower, waveform_length])
+
+# load template bank waveforms to memory
+with mp.Pool(processes=n_cpus) as pool:
+    template_waveforms = pool.map(get_template, template_tasks)
+    pool.close()
+    pool.join()
+template_waveforms = np.copy(template_waveforms)
+
+
+
+
+
+previous_good_params_length = 0
 while generated_samples < n_signal_samples:
+
     #generate waveforms_per_file samples at a time, to avoid memory issues.
 
     p = prior.sample(waveforms_per_batch)
+
+    if mass1prior == PowerLaw:
+        m1 = []
+        m2 = []
+        for i in range(waveforms_per_batch):
+            pair = next(iter(draw_mass_pair_power(mass1_min, mass1_max, mass2_min, mass2_max, mass1_power, mass2_power)))
+            m1.append(pair[0])
+            m2.append(pair[1])
+        p['mass1'] = m1
+        p['mass2'] = m2
+
 
     #adding non-sampled args to the parameters
     p['gps'] = []
@@ -571,7 +646,6 @@ while generated_samples < n_signal_samples:
     #TODO: adapt code to work with Gaussian noise without requiring a directory of real noise
     else:
         p['gps'] = np.random.choice(valid_times, size = (waveforms_per_batch, len(detectors)))
-    
 
     p['injection'] = np.ones(waveforms_per_batch, dtype = bool)
 
@@ -602,6 +676,7 @@ while generated_samples < n_signal_samples:
     
     #save only the waveforms with network SNR and detector SNRs above threshold.
 
+    template_tasks = []
     for i in range(len(snrs)):
 
         network_snr = np.sqrt(sum([snrs[i][detector]**2 for detector in snrs[i]]))
@@ -625,42 +700,36 @@ while generated_samples < n_signal_samples:
                 params[i]['template_waveforms'] = choose_templates_new(template_bank_params, metricParams, 
                                                                        templates_per_waveform, params[i]['mass1'], params[i]['mass2'], 
                                                                        params[i]['spin1z'], params[i]['spin2z'], aXis = aXis)
+                
+            elif bank_type == "spiir":
+                cm = chirp_mass(params[i]['mass1'], params[i]['mass2'])
+                inj_args = {
+                    "mchirp": cm, "mass1": params[i]["mass1"], "mass2": params[i]["mass2"],
+                    "spin1z": params[i]["spin1z"], "spin2z": params[i]["spin2z"],
+                    "i": params[i]["i"], "ra": params[i]["ra"], "dec": params[i]["dec"],
+                    "pol": params[i]["pol"], "approx": approx_name, "d": 100,
+                    "gps": params[i]["gps"], "f_low": f_lower, "delta_t": delta_t,
+                    "duration": waveform_length, "phase_order": approx_phase_order
+                }
+                arg_closest = (np.abs(template_bank_params[:,0] - cm)).argmin()
+                minimum = max(arg_closest - template_range, 0)
+                maximum = min(arg_closest + template_range, len(template_bank_params[:,0]))
+                
+                template_tasks.append([inj_args, template_waveforms[minimum:maximum], minimum, maximum, i])
+                
+            good_params.append(params[i])
     
-    # Sample template for non-pycbc bank (ie. using match)
+    # Sample templates for non-pycbc bank (ie. using match)
     if bank_type == "spiir":
-        # load template bank waveforms to memory
-        with mp.Pool(processes=n_cpus) as pool:
-            template_waveforms = pool.map(get_template, [template_bank_params, delta_t, f_lower, waveform_length])
-            pool.close()
-            pool.join()
-        template_waveforms = np.copy(template_waveforms)
-        
-        # organise tasks for getting overlaps of templates on each injection
-        template_tasks = []
-        for i in range(len(params)):
-            cm = chirp_mass(params[i]['mass1'], params[i]['mass2'])
-            inj_args = {
-                "mchirp": cm, "mass1": params[i]["mass1"], "mass2": params[i]["mass2"],
-                "spin1z": params[i]["spin1z"], "spin2z": params[i]["spin2z"],
-                "i": params[i]["i"], "ra": params[i]["ra"], "dec": params[i]["dec"],
-                "pol": params[i]["pol"], "approx": td_approximant, "d": 100,
-                "gps": [params[i]["gps"]], "f_low": f_lower, "delta_t": delta_t,
-                "duration": waveform_length
-            }
-            arg_closest = (np.abs(template_bank_params[:,0] - cm)).argmin()
-            minimum = max(arg_closest - template_range, 0)
-            maximum = min(arg_closest + template_range, len(template_bank_params[:,0]))
-            
-            template_tasks.append([inj_args, template_waveforms[minimum:maximum], minimum, maximum, i])
         
         # get overlap of bank subsets with each injection
-        print("Running multiprocessing to sample templates for each injection")
+        print("Running template selection multiprocessing to sample templates for each injection")
         t_task = time.time()
         with mp.Pool(processes=n_cpus) as pool:
             overlaps = pool.map(get_match, template_tasks)
             pool.close()
             pool.join()
-        print(f"Time for multiprocessing of all tasks: {time.time() - t_task} seconds")
+        print(f"Time for template selection multiprocessing of all tasks: {time.time() - t_task} seconds")
         
         templates = choose_templates_match(overlaps, templates_per_waveform)
         
@@ -669,21 +738,21 @@ while generated_samples < n_signal_samples:
         # 2. Sample templates such that they all have a net network SNR > 6 or some threshold based on overlap * optimal network_snr
         # 3. Sample templates with any overlap, but use that to label ones with net network snr < 6 as noise instead of injection samples
         
-        for i in range(len(params)):
-            params[i]['template_waveforms'] = templates[i]
-        
-    
-    for i in range(len(snrs)):
-            good_params.append(params[i])
+        for i in range(len(templates)):
+            good_params[i+previous_good_params_length]['template_waveforms'] = templates[i]
 
     generated_samples = len(good_params)
     if generated_samples <= waveforms_per_batch:
         if generated_samples/waveforms_per_batch < 0.5:
-            print("WARNING: check your distance prior and SNR threshold! Only {}% of the samples meet the SNR threshold."\
-                  .format(round(generated_samples/waveforms_per_batch*100)))
+            print(f"WARNING: check your distance prior and SNR threshold! Only {generated_samples/waveforms_per_batch*100:.2f}% of the samples meet the SNR threshold.")
         else:
             print("SNR threshold looks good, {}% of samples meet the threshold.".format(round(generated_samples/waveforms_per_batch*100)))
-    print(len(good_params))
+
+    print(f"Number of good injections so far: {len(good_params)}")
+    print(f"Number of good injections in this batch: {len(good_params) - previous_good_params_length}")
+    print(f"Number of bad injections in this batch: {waveforms_per_batch - (len(good_params) - previous_good_params_length)}")
+
+    previous_good_params_length = len(good_params)
 
 
 print('done samples with injections')
@@ -693,13 +762,24 @@ print('done samples with injections')
 if n_signal_samples > 0:
     good_params_dict = {key: np.array([good_params[i][key] for i in range(len(good_params))][:n_signal_samples]) for key in good_params[0].keys()}
 
-np.save(project_dir+"/"+"params.npy", good_params_dict)
+np.save(project_dir+"/"+"params-10k-4000Mpc-USF.npy", good_params_dict)
 
 
 #generate noise samples. most of the parameters aren't used, but the masses are used to choose the templates.
 
 if n_noise_samples > 0:
     noise_p = prior.sample(n_noise_samples)
+
+    if mass1prior == PowerLaw:
+        m1 = []
+        m2 = []
+        for i in range(waveforms_per_batch):
+            pair = next(iter(draw_mass_pair_power(mass1_min, mass1_max, mass2_min, mass2_max, mass1_power, mass2_power)))
+            m1.append(pair[0])
+            m2.append(pair[1])
+        noise_p['mass1'] = m1
+        noise_p['mass2'] = m2
+
     noise_p['gps'] = []
     noise_p['injection'] = np.zeros(n_noise_samples, dtype = bool)
     noise_p['template_waveforms'] = np.random.randint(0, len(template_bank_params), size=(n_noise_samples,templates_per_waveform))
@@ -775,61 +855,66 @@ if n_noise_samples > 0:
         good_params_dict = noise_p
 
 #np.save(project_dir+"/"+"noise_params.npy", noise_p)
-np.save(project_dir+"/"+"params.npy", good_params_dict)
+np.save(project_dir+"/"+"params-10k-4000Mpc-USF.npy", good_params_dict)
 
 #save the arguments used to generate the parameters to a file
 
-args = {"seed": seed,
-            "n_signal_samples": n_signal_samples,
-            "n_noise_samples": n_noise_samples,
-            "glitch_frac": glitch_frac,
-            "project_dir": project_dir,
-            "noise_dir": noise_dir,
-            "noise_type": noise_type,
-            "templates_per_waveform": templates_per_waveform,
-            "td_approximant": td_approximant,
-            "fd_approximant": fd_approximant,
-            "f_lower": f_lower,
-            "delta_t": delta_t,
-            "duration": waveform_length,
-            "seconds_before": seconds_before,
-            "seconds_after": seconds_after,
-            "detectors": detectors,
-            "network_snr_threshold": network_snr_threshold,
-            "detector_snr_threshold": detector_snr_threshold,
-            "powerlaw_alpha": powerlaw_alpha,
-            "mass1prior": mass1prior.__name__,
-            "mass2prior": mass2prior.__name__,
-            "mass1_min": mass1_min,
-            "mass1_max": mass1_max,
-            "mass2_min": mass2_min,
-            "mass2_max": mass2_max,
-            "spin1zprior": spin1zprior.__name__,
-            "spin2zprior": spin2zprior.__name__,
-            "spin1z_min": spin1z_min,
-            "spin1z_max": spin1z_max,
-            "spin2z_min": spin2z_min,
-            "spin2z_max": spin2z_max,
-            "ra_prior": ra_prior.__name__,
-            "dec_prior": dec_prior.__name__,
-            "ra_min": ra_min,
-            "ra_max": ra_max,
-            "dec_min": dec_min,
-            "dec_max": dec_max,
-            "d_prior": d_prior.__name__,
-            "d_min": d_min,
-            "d_max": d_max,
-            "d_eff_scaling": d_eff_scaling,
-            "d_eff_target": d_eff_target,
-            "d_eff_prior": d_eff_prior.__name__,
-            "d_eff_min": d_eff_min,
-            "d_eff_max": d_eff_max,
-            "inc_prior": inc_prior.__name__,
-            "inc_min": inc_min,
-            "inc_max": inc_max,
-            "pol_prior": pol_prior.__name__,
-            "pol_min": pol_min,
-            "pol_max": pol_max}
+args = {
+    "seed": seed,
+    "n_signal_samples": n_signal_samples,
+    "n_noise_samples": n_noise_samples,
+    "glitch_frac": glitch_frac,
+    "project_dir": project_dir,
+    "noise_dir": noise_dir,
+    "noise_type": noise_type,
+    "templates_per_waveform": templates_per_waveform,
+    "bank_type": bank_type,
+    "td_approximant": td_approximant,
+    "fd_approximant": fd_approximant,
+    "f_lower": f_lower,
+    "delta_t": delta_t,
+    "duration": waveform_length,
+    "seconds_before": seconds_before,
+    "seconds_after": seconds_after,
+    "detectors": detectors,
+    "network_snr_threshold": network_snr_threshold,
+    "detector_snr_threshold": detector_snr_threshold,
+    # "powerlaw_alpha": powerlaw_alpha,
+    "mass1prior": mass1prior.__name__,
+    "mass2prior": mass2prior.__name__,
+    "mass1_power": mass1_power,
+    "mass2_power": mass2_power,
+    "mass1_min": mass1_min,
+    "mass1_max": mass1_max,
+    "mass2_min": mass2_min,
+    "mass2_max": mass2_max,
+    "spin1zprior": spin1zprior.__name__,
+    "spin2zprior": spin2zprior.__name__,
+    "spin1z_min": spin1z_min,
+    "spin1z_max": spin1z_max,
+    "spin2z_min": spin2z_min,
+    "spin2z_max": spin2z_max,
+    "ra_prior": ra_prior.__name__,
+    "dec_prior": dec_prior.__name__,
+    "ra_min": ra_min,
+    "ra_max": ra_max,
+    "dec_min": dec_min,
+    "dec_max": dec_max,
+    "d_prior": d_prior.__name__,
+    "d_min": d_min,
+    "d_max": d_max,
+    "d_eff_scaling": d_eff_scaling,
+    "d_eff_target": d_eff_target,
+    "d_eff_prior": d_eff_prior.__name__,
+    "d_eff_min": d_eff_min,
+    "d_eff_max": d_eff_max,
+    "inc_prior": inc_prior.__name__,
+    "inc_min": inc_min,
+    "inc_max": inc_max,
+    "pol_prior": pol_prior.__name__,
+    "pol_min": pol_min,
+    "pol_max": pol_max
+}
 
 #save args
 with open(project_dir+"/"+"args.json", 'w') as f:

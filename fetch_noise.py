@@ -24,13 +24,14 @@ state_flag = "DMT-ANALYSIS_READY:1"
 print("starting")
 
 
-write_dir = "/fred/oz016/alistair/GWSamplegen/noise/O3_first_week_1024"
+# write_dir = "/fred/oz016/alistair/GWSamplegen/noise/O3_first_week_1024"
+write_dir = "/fred/oz016/damon/GWSamplegen/noise/O3_first_week_64"
 
 #get current working directory
 cwd = os.getcwd()
 
 sample_rate = 2048
-min_duration = 1024
+min_duration = 64
 
 #create write_dir if it doesn't exist
 if not os.path.exists(write_dir):
@@ -47,7 +48,9 @@ ifo_2 = '/fred/oz016/alistair/GWSamplegen/noise/segments/L1_O3a.txt'
 #start of O3: 1238166018
 #second week of O3 start: 1238770818
 
-start = 1239375618
+# start = 1239375618
+# end = start + 60*60*24*7
+start = 1238166018
 end = start + 60*60*24*7
 
 #1239150592 is some time in O3, a bit after GW190425
