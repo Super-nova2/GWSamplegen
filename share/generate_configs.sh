@@ -10,10 +10,8 @@
 #module load python/3.9.5
 #module load cudnn/8.4.1.50-cuda-11.7.0
 
-# source /home/amcleod/.bashrc
+source /home/amcleod/.bashrc
 
-ml gcc/11.3.0 openmpi/4.1.4 python/3.10.4 cudnn/8.4.1.50-cuda-11.7.0 git/2.36.0
-source /fred/oz016/damon/envs/nt_310/bin/activate
 
 cd "/fred/oz016/alistair/GWSamplegen"
 
