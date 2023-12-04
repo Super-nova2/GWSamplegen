@@ -22,7 +22,7 @@ configs/*
 
 load*
 
-*.json
+/*.json
 
 test.sh
 

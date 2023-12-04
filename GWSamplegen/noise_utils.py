@@ -97,7 +97,12 @@ def get_valid_noise_times(
 		times = np.arange(path[1], path[1]+path[2] - noise_len, min_step)
 		if path[1] + path[2] - noise_len not in times:
 
-			times = np.append(times, path[1] + path[2] - noise_len)
+			if int((path[1] + path[2] - noise_len) - times[-1]) == 1:
+				#this additional if condition is to solve the edge case of a 1 second noise segment.
+				times = np.append(times, path[1] + path[2] - noise_len)
+			
+			else:
+				print("ignoring a 1 second segment")
 
 		valid_times = np.concatenate((valid_times,times))
 

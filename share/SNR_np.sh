@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=SNR
+#SBATCH --job-name=SNR3
 #SBATCH --output=./logs/%x_%a.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
@@ -14,4 +14,4 @@ cd "/fred/oz016/alistair/GWSamplegen"
 echo starting job
 
 #$SLURM_ARRAY_TASK_COUNT
-python asyncSNR_np.py --index=$SLURM_ARRAY_TASK_ID --totaljobs=$SLURM_ARRAY_TASK_COUNT --config-file=configs/real_dsens_300_mpc_glitch_week2/args.json
+python asyncSNR_np.py --index=$SLURM_ARRAY_TASK_ID --totaljobs=$SLURM_ARRAY_TASK_COUNT --config-file=configs/real_dsens_600_mpc_astrophysical/args.json

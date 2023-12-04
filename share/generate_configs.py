@@ -371,7 +371,10 @@ if config_file:
         detectors = config['detectors']
         network_snr_threshold = config['network_snr_threshold']
         detector_snr_threshold = config['detector_snr_threshold']
-        # powerlaw_alpha = config['powerlaw_alpha']
+        try:
+            powerlaw_alpha = config['powerlaw_alpha'] #TODO: delete once all args files have been updated
+        except:
+            pass
         mass1prior = eval(config['mass1prior'])
         mass2prior = eval(config['mass2prior'])
         mass1_power = config['mass1_power']
@@ -550,19 +553,19 @@ if noise_type == "Real":
 
 
 
+if bank_type == "spiir":
+    # organise tasks for getting template waveforms
+    print(f"Shape of template_bank_params: {np.shape(template_bank_params)}")
+    template_tasks = []
+    for i in range(len(template_bank_params)):
+        template_tasks.append([template_bank_params[i, :], delta_t, f_lower, waveform_length])
 
-# organise tasks for getting template waveforms
-print(f"Shape of template_bank_params: {np.shape(template_bank_params)}")
-template_tasks = []
-for i in range(len(template_bank_params)):
-    template_tasks.append([template_bank_params[i, :], delta_t, f_lower, waveform_length])
-
-# load template bank waveforms to memory
-with mp.Pool(processes=n_cpus) as pool:
-    template_waveforms = pool.map(get_template, template_tasks)
-    pool.close()
-    pool.join()
-template_waveforms = np.copy(template_waveforms)
+    # load template bank waveforms to memory
+    with mp.Pool(processes=n_cpus) as pool:
+        template_waveforms = pool.map(get_template, template_tasks)
+        pool.close()
+        pool.join()
+    template_waveforms = np.copy(template_waveforms)
 
 
 
