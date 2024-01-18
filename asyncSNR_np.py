@@ -104,7 +104,7 @@ def run_batch(n):
 
 		if params["injection"][n+i]:
 			
-			args = {'mass1': params['m1_df'][n+i], 'mass2': params['m1_df'][n+i],
+			args = {'mass1': params['mass1'][n+i], 'mass2': params['mass2'][n+i],
 	   				'spin1z': params['spin1z'][n+i], 'spin2z': params['spin2z'][n+i],	
 					'i': params['i'][n+i], 'd': params['d'][n+i],
 					'ra': params['ra'][n+i], 'dec': params['dec'][n+i],
