@@ -76,7 +76,7 @@ def constructPrior(
     
 def get_snr(args):
     hp, hc = get_td_waveform(
-        mass1 = args['m1_df'], mass2 = args['m2_df'], 
+        mass1 = args['mass1'], mass2 = args['mass2'], 
         spin1z = args['spin1z'], spin2z = args['spin2z'],
         inclination = args['i'], distance = args['d'],
         approximant = td_approximant, f_lower = f_lower, delta_t = delta_t
@@ -793,7 +793,7 @@ while generated_samples < n_signal_samples:
                 
             elif bank_type == "spiir":
                 params[i]['template_waveforms'] = []
-                cm = chirp_mass(params[i]['m1_df'], params[i]['m2_df'])
+                cm = chirp_mass(params[i]['mass1'], params[i]['mass2'])
                 inj_args = {
                     "mchirp": cm, "mass1": params[i]["mass1"], "mass2": params[i]["mass2"],
                     "spin1z": params[i]["spin1z"], "spin2z": params[i]["spin2z"],
