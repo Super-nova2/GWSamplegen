@@ -78,7 +78,7 @@ def run_batch(n):
 	t_templates = np.empty((n_templates * samples_per_batch, kmax-kmin), dtype=np.complex128)
 	#start = time.time()
 
-	print(f'delta f: {delta_f} , f_final: {f_final} , kmin: {kmin}, kmax: {kmax}')
+	# print(f'delta f: {delta_f} , f_final: {f_final} , kmin: {kmin}, kmax: {kmax}')
 	
 	for i in range(n_templates * samples_per_batch):
 		t_templates[i] = get_fd_waveform(mass1 = batch_template_params[i,1], mass2 = batch_template_params[i,2], 
@@ -237,7 +237,7 @@ if __name__ == "__main__":
 	#Damon's definition of N. from testing, it's just the total length of the segment in samples
 	#N = (len(sample1)-1) * 2
 	N = int(duration/delta_t)
-	print(f'N: {N}, delta_f: {delta_f}, f_lower: {f_lower}')
+	# print(f'N: {N}, delta_f: {delta_f}, f_lower: {f_lower}')
 	kmin, kmax = np_get_cutoff_indices(f_lower, f_final, delta_f, N)
 	print(f'kmin: {kmin}, kmax: {kmax}')
 
