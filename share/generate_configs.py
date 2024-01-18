@@ -51,6 +51,9 @@ from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
 from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd
 from asyncSNR_np import get_projected_waveform_mp
 
+import astropy.units as u
+import astropy.cosmology as cosmo
+from astropy.cosmology import FlatwCDM
 from astropy.utils import iers
 iers.conf.auto_download = False
 
@@ -126,28 +129,46 @@ def get_template(task):
 
 
 def get_match(task):
-    # if task[4] == 0:
-    #     print(task[0], flush=True)
-    #     print(np.shape(task[1]), flush=True)
-    #     print(task[2], flush=True)
-    #     print(task[3], flush=True)
-    #     print(task[4], flush=True)
     args = task[0]
     h1, l1 = get_projected_waveform_mp(args, waveform_duration=args["duration"])
     h1_fs = TimeSeries(h1, delta_t=args["delta_t"]).to_frequencyseries()
     
     overlaps = []
-    templates = np.copy(task[1])
-    for key, template in enumerate(templates):
-        x = match(h1_fs, FrequencySeries(template, delta_f=h1_fs.delta_f))
-        overlaps.append([x[0], task[2]+key])
+    for key in range(task[2],task[3]):
+        x = match(h1_fs, FrequencySeries(template_waveforms[key], delta_f=h1_fs.delta_f), psd=psds['H1'])  # Currently using H1 psd cause it is less sensitive
+        overlaps.append([x[0], key])
         
-    overlaps = sorted(overlaps, key=lambda x:x[0])
+    overlaps = sorted(overlaps, key=lambda x:x[0], reverse=True)
     
     return overlaps
 
 
-def choose_templates_match(overlaps, n_templates):
+def get_overlaps_for_template(x, y, z):
+    temp = []
+    for i in list(z):
+        temp.append(x[list(y).index(int(i))])
+    return temp
+
+
+def template_choice(chosen_templates, chosen_overlaps, n_templates, inj_index, all_indexes, all_overlaps, choice_indexes, choice_overlaps, skewed=False):
+    if len(choice_indexes) < n_templates:
+        print(f'For injection {inj_index}, there are not sufficient templates with net network SNR > 3 to sample from, so taking the best {n_templates} templates.')
+        chosen_templates.append(all_indexes[:n_templates])
+        chosen_overlaps.append(get_overlaps_for_template(all_overlaps, all_indexes, all_indexes[:n_templates]))
+    else:
+        temp = [choice_indexes[0]]
+        if skewed:
+            p = np.copy([len(choice_indexes[1:])-j for j in range(len(choice_indexes[1:]))])
+            p = p / np.sum(p)
+            temp.extend(np.random.choice(choice_indexes[1:], size=n_templates-1, replace=False, p=p))
+        else:
+            temp.extend(np.random.choice(choice_indexes[1:], size=n_templates-1, replace=False))
+        chosen_templates.append(temp)
+        chosen_overlaps.append(get_overlaps_for_template(choice_overlaps, choice_indexes, temp))
+    return chosen_templates, chosen_overlaps
+
+
+def choose_templates_match(overlaps, n_templates, all_network_snrs):
     """ Choose a set of templates from a bank that uses the PyCBC `match` function to calculate template overlaps.
     Currently only selecting the highest overlap template and the rest are randomly sampled.
     
@@ -158,14 +179,57 @@ def choose_templates_match(overlaps, n_templates):
     n_templates: int
         Number of templates to choose for each injection."""
     
-    templates = []
-    for i in overlaps:
+    chosen_templates = []
+    chosen_overlaps = []
+    for key,i in enumerate(overlaps):
+        i = [[j[0],j[1],all_network_snrs[key]*j[0]] for j in i]
+        all_overlaps = np.copy(i)[:,0]
         indexes = np.copy(i)[:,1]
-        temp = [indexes[0]]
-        temp.extend(np.random.choice(indexes[1:], size=n_templates-1, replace=False))
-        templates.append(temp)
-    
-    return templates
+        all_net_snrs = np.copy(i)[:,2]
+        
+        temp_overlaps_gt0_5 = [[j[0],j[1]] for j in i if j[0]>0.5]
+        overlaps_gt0_5 = np.copy(temp_overlaps_gt0_5)[:,0]
+        indexes_gt0_5 = np.copy(temp_overlaps_gt0_5)[:,1]
+
+        temp_overlaps_netsnr_gt3 = [[j[0],j[1],j[2]] for j in i if j[2]>3]
+        overlaps_snr_gt3 = np.copy(temp_overlaps_netsnr_gt3)[:,0]
+        indexes_snr_gt3 = np.copy(temp_overlaps_netsnr_gt3)[:,1]
+        net_snr_gt3 = np.copy(temp_overlaps_netsnr_gt3)[:,2]
+
+        if template_selection == "overlap":
+            chosen_templates, chosen_overlaps = template_choice(
+                chosen_templates, chosen_overlaps,
+                n_templates, key,
+                indexes, all_overlaps,
+                indexes_gt0_5, overlaps_gt0_5,
+                skewed=template_selection_skewed
+            )
+        elif template_selection == "snr":
+            chosen_templates, chosen_overlaps = template_choice(
+                chosen_templates, chosen_overlaps,
+                n_templates, key,
+                indexes, all_overlaps,
+                indexes_snr_gt3, overlaps_snr_gt3,
+                skewed=template_selection_skewed
+            )
+        elif template_selection == "random":
+            temp = [indexes[0]]
+            if template_selection_skewed:
+                p = np.copy([len(indexes[1:])-j for j in range(len(indexes[1:]))])
+                p = p / np.sum(p)
+                temp.extend(np.random.choice(indexes[1:], size=n_templates-1, replace=False, p=p))
+            else:
+                temp.extend(np.random.choice(indexes[1:], size=n_templates-1, replace=False))
+            chosen_templates.append(temp)
+            chosen_overlaps.append(get_overlaps_for_template(all_overlaps, indexes, temp))
+        elif template_selection == "best":
+            chosen_templates.append(indexes[:n_templates])
+            chosen_overlaps.append(get_overlaps_for_template(all_overlaps, indexes, indexes[:n_templates]))
+        else:
+            print("Invalid `template_selection` method. Please choose either 'overlap', 'snr', 'random', or 'best'.")
+            exit()
+        
+    return chosen_templates, chosen_overlaps
 
 
 # Function from LVC Rates & Populations Group
@@ -218,9 +282,11 @@ noise_dir = './noise/test'
 template_bank = "PyCBC_98_aligned_spin"
 bank_type = "pycbc"
 
-template_bank = "./template_banks/bank_5-100.npy"
+template_bank = "./template_banks/bank_4-200.npy"
 bank_type = "spiir"
 template_range = 100
+template_selection = "overlap"
+template_selection_skewed = False
 
 #noise_type should be either Gaussian or Real. If Gaussian, it will use the PSD saved from the noise directory.
 noise_type = "Gaussian"
@@ -359,6 +425,9 @@ if config_file:
         glitch_frac = config['glitch_frac']
         project_dir = config['project_dir']
         bank_type = config['bank_type']
+        template_range = config['template_range']
+        template_selection = config['template_selection']
+        template_selection_skewed = config['template_selection_skewed']
         noise_dir = config['noise_dir']
         noise_type = config['noise_type']
         templates_per_waveform = config['templates_per_waveform']
@@ -372,10 +441,7 @@ if config_file:
         detectors = config['detectors']
         network_snr_threshold = config['network_snr_threshold']
         detector_snr_threshold = config['detector_snr_threshold']
-        try:
-            powerlaw_alpha = config['powerlaw_alpha'] #TODO: delete once all args files have been updated
-        except:
-            pass
+        # powerlaw_alpha = config['powerlaw_alpha']
         mass1prior = eval(config['mass1prior'])
         mass2prior = eval(config['mass2prior'])
         mass1_power = config['mass1_power']
@@ -412,6 +478,10 @@ if config_file:
         
     for key, value in config.items():
         print(key, value)
+
+if template_selection not in ["overlap", "snr", "random", "best"]:
+    print("Invalid `template_selection` method. Please choose either 'overlap' or 'snr'.")
+    exit()
 
 waveforms_per_batch = n_signal_samples//10
 
@@ -563,12 +633,13 @@ if bank_type == "spiir":
     for i in range(len(template_bank_params)):
         template_tasks.append([template_bank_params[i, :], delta_t, f_lower, waveform_length])
 
+    print("Starting generation of template waveforms")
     # load template bank waveforms to memory
     with mp.Pool(processes=n_cpus) as pool:
         template_waveforms = pool.map(get_template, template_tasks)
         pool.close()
         pool.join()
-    template_waveforms = np.copy(template_waveforms)
+    print("Successfully finished generation of template waveforms")
 
 
 
@@ -735,7 +806,7 @@ while generated_samples < n_signal_samples:
                 minimum = max(arg_closest - template_range, 0)
                 maximum = min(arg_closest + template_range, len(template_bank_params[:,0]))
                 
-                template_tasks.append([inj_args, template_waveforms[minimum:maximum], minimum, maximum, i])
+                template_tasks.append([inj_args, 1, minimum, maximum, i])
                 
             good_params.append(params[i])
     
@@ -751,15 +822,17 @@ while generated_samples < n_signal_samples:
             pool.join()
         print(f"Time for template selection multiprocessing of all tasks: {time.time() - t_task} seconds")
         
-        templates = choose_templates_match(overlaps, templates_per_waveform)
+        all_network_snrs = [i['network_snr'] for i in good_params]
+        templates, chosen_overlaps = choose_templates_match(overlaps, templates_per_waveform, all_network_snrs)
         
         # I want functionality to do the following eventually:
         # 1. Sample templates that return any level of overlap from the set of templates
         # 2. Sample templates such that they all have a net network SNR > 6 or some threshold based on overlap * optimal network_snr
-        # 3. Sample templates with any overlap, but use that to label ones with net network snr < 6 as noise instead of injection samples
+        # 3. Sample templates with any overlap, but use that to label ones with net network snr < 3? as noise instead of injection samples
         
         for i in range(len(templates)):
             good_params[i+previous_good_params_length]['template_waveforms'] = templates[i]
+            good_params[i+previous_good_params_length]['overlaps'] = chosen_overlaps[i]
 
     generated_samples = len(good_params)
     if generated_samples <= waveforms_per_batch:
@@ -793,7 +866,7 @@ if n_noise_samples > 0:
     if mass1prior == PowerLaw:
         m1 = []
         m2 = []
-        for i in range(waveforms_per_batch):
+        for i in range(n_noise_samples):
             pair = next(iter(draw_mass_pair_power(mass1_min, mass1_max, mass2_min, mass2_max, mass1_power, mass2_power)))
             m1.append(pair[0])
             m2.append(pair[1])
@@ -813,6 +886,7 @@ if n_noise_samples > 0:
     noise_p['mass2'] = m2_df
 
     noise_p['gps'] = []
+    noise_p['overlaps'] = np.zeros(shape=(n_signal_samples, templates_per_waveform))  # This is dummy data so it saves correctly
     noise_p['injection'] = np.zeros(n_noise_samples, dtype = bool)
     noise_p['template_waveforms'] = np.random.randint(0, len(template_bank_params), size=(n_noise_samples,templates_per_waveform))
     templates = []
@@ -882,13 +956,13 @@ if n_noise_samples > 0:
     #noise_p['template_waveforms'] = np.array(templates)
 
     if n_signal_samples > 0:
+        print(good_params_dict.keys())
         for key in good_params_dict.keys():
             good_params_dict[key] = np.append(good_params_dict[key], noise_p[key], axis = 0)
     else:
         good_params_dict = noise_p
 
 #np.save(project_dir+"/"+"noise_params.npy", noise_p)
-np.save(project_dir+"/"+"params.npy", good_params_dict)
 np.save(project_dir+"/"+"params.npy", good_params_dict)
 
 #save the arguments used to generate the parameters to a file
@@ -902,6 +976,9 @@ args = {
     "noise_dir": noise_dir,
     "noise_type": noise_type,
     "templates_per_waveform": templates_per_waveform,
+    "template_range": template_range,
+    "template_selection": template_selection,
+    "template_selection_skewed": template_selection_skewed,
     "bank_type": bank_type,
     "td_approximant": td_approximant,
     "fd_approximant": fd_approximant,
