@@ -72,11 +72,12 @@ def constructPrior(
     
     
 def get_snr(args):
-    
-    hp, hc = get_td_waveform(mass1 = args['mass1'], mass2 = args['mass2'], 
-                             spin1z = args['spin1z'], spin2z = args['spin2z'],
-                             inclination = args['i'], distance = args['d'],
-                             approximant = td_approximant, f_lower = f_lower, delta_t = delta_t)
+    hp, hc = get_td_waveform(
+        mass1 = args['mass1'], mass2 = args['mass2'], 
+        spin1z = args['spin1z'], spin2z = args['spin2z'],
+        inclination = args['i'], distance = args['d'],
+        approximant = td_approximant, f_lower = f_lower, delta_t = delta_t
+    )
     
     snrs = {}
 
@@ -464,8 +465,8 @@ prior = PriorDict()
 # CURRENTLY, M1 AND M2 ARE SWAPPED IF M2 IS SAMPLED ABOVE M1, WHICH ONLY WORKS WHEN THEY USE THE SAME
 # DISTRIBUTION. IF USING DIFFERENT DISTRIBUTIONS (EG. POWER LAW), BE CAREFUL AND TEST THIS CODE FIRST.
 if mass1prior != PowerLaw:
-    prior['mass1'] = constructPrior(mass1prior, mass1_min, mass1_max)
-    prior['mass2'] = constructPrior(mass2prior, mass2_min, mass2_max)
+    prior['mass1_source'] = constructPrior(mass1prior, mass1_min, mass1_max)
+    prior['mass2_source'] = constructPrior(mass2prior, mass2_min, mass2_max)
 
 prior['spin1z'] = constructPrior(spin1zprior, spin1z_min, spin1z_max)
 prior['spin2z'] = constructPrior(spin2zprior, spin2z_min, spin2z_max)
@@ -585,8 +586,20 @@ while generated_samples < n_signal_samples:
             pair = next(iter(draw_mass_pair_power(mass1_min, mass1_max, mass2_min, mass2_max, mass1_power, mass2_power)))
             m1.append(pair[0])
             m2.append(pair[1])
-        p['mass1'] = m1
-        p['mass2'] = m2
+        p['mass1_source'] = m1
+        p['mass2_source'] = m2
+
+    cosmol = FlatwCDM(H0=67.9, Om0=0.3065, w0=-1)
+    m1_df = []
+    m2_df = []
+    z = []
+    for key in range(len(p['mass1_source'])):
+        z.append(cosmo.z_at_value(cosmol.luminosity_distance, u.Quantity(p['d'][key], u.Mpc)))
+        m1_df.append(p['mass1_source'][key] * (1 + z[key]))
+        m2_df.append(p['mass2_source'][key] * (1 + z[key]))
+    p['z'] = z
+    p['mass1'] = m1_df
+    p['mass2'] = m2_df
 
 
     #adding non-sampled args to the parameters
@@ -693,7 +706,8 @@ while generated_samples < n_signal_samples:
                 params[i][detector + '_snr'] = snrs[i][detector]
 
             #ensure that mass2 < mass1
-            if params[i]['mass2'] > params[i]['mass1']:
+            if params[i]['mass2_source'] > params[i]['mass1_source']:
+                params[i]['mass1_source'], params[i]['mass2_source'] = params[i]['mass2_source'], params[i]['mass1_source']
                 params[i]['mass1'], params[i]['mass2'] = params[i]['mass2'], params[i]['mass1']
 
             #choose template waveform(s) for this sample, and add them to params[i]
@@ -705,6 +719,7 @@ while generated_samples < n_signal_samples:
                                                                        params[i]['spin1z'], params[i]['spin2z'], aXis = aXis)
                 
             elif bank_type == "spiir":
+                params[i]['template_waveforms'] = []
                 cm = chirp_mass(params[i]['mass1'], params[i]['mass2'])
                 inj_args = {
                     "mchirp": cm, "mass1": params[i]["mass1"], "mass2": params[i]["mass2"],
@@ -780,8 +795,20 @@ if n_noise_samples > 0:
             pair = next(iter(draw_mass_pair_power(mass1_min, mass1_max, mass2_min, mass2_max, mass1_power, mass2_power)))
             m1.append(pair[0])
             m2.append(pair[1])
-        noise_p['mass1'] = m1
-        noise_p['mass2'] = m2
+        noise_p['mass1_source'] = m1
+        noise_p['mass2_source'] = m2
+
+    cosmol = FlatwCDM(H0=67.9, Om0=0.3065, w0=-1)
+    m1_df = []
+    m2_df = []
+    z = []
+    for key in range(len(noise_p['mass1_source'])):
+        z.append(cosmo.z_at_value(cosmol.luminosity_distance, u.Quantity(noise_p['d'][key], u.Mpc)))
+        m1_df.append(noise_p['mass1_source'][key] * (1 + z[key]))
+        m2_df.append(noise_p['mass2_source'][key] * (1 + z[key]))
+    noise_p['z'] = z
+    noise_p['mass1'] = m1_df
+    noise_p['mass2'] = m2_df
 
     noise_p['gps'] = []
     noise_p['injection'] = np.zeros(n_noise_samples, dtype = bool)
@@ -797,7 +824,8 @@ if n_noise_samples > 0:
 
     for i in range(n_noise_samples):
 
-        if noise_p['mass2'][i] > noise_p['mass1'][i]:
+        if noise_p['mass2_source'][i] > noise_p['mass1_source'][i]:
+            noise_p['mass1_source'][i], noise_p['mass2_source'][i] = noise_p['mass2_source'][i], noise_p['mass1_source'][i]
             noise_p['mass1'][i], noise_p['mass2'][i] = noise_p['mass2'][i], noise_p['mass1'][i]
 
 
