@@ -239,7 +239,7 @@ if __name__ == "__main__":
 	N = int(duration/delta_t)
 	# print(f'N: {N}, delta_f: {delta_f}, f_lower: {f_lower}')
 	kmin, kmax = np_get_cutoff_indices(f_lower, f_final, delta_f, N)
-	print(f'kmin: {kmin}, kmax: {kmax}')
+	# print(f'kmin: {kmin}, kmax: {kmax}')
 
 
 	##CLEAN UP: JOB ARRAY STUFF GOING HERE FOR NOW
