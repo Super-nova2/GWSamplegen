@@ -22,9 +22,9 @@ configs/*
 
 load*
 
-*.json
+/*.json
+/*.sh
 
-test.sh
 
 glitches
 
