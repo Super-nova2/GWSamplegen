@@ -2,10 +2,12 @@ import os
 import multiprocessing as mp
 import argparse
 from typing import Iterator, List, Optional, Sequence, Tuple
+import json
 
 #import asyncio
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 
+import matplotlib.pyplot as plt
 import numpy as np
 #import tensorflow as tf
 
@@ -22,6 +24,8 @@ from pycbc.types.timeseries import TimeSeries
 from pycbc.waveform import get_fd_waveform, get_td_waveform
 import pycbc.noise
 
+from astropy.utils import iers
+iers.conf.auto_download = False
 
 def get_projected_waveform_mp(args, waveform_duration=None):
 	ifos = ['H1', 'L1']
@@ -56,7 +60,10 @@ def get_projected_waveform_mp(args, waveform_duration=None):
 		detector_index = ifos.index(detector)
 		waveforms[detector_index] = detector_signal
 
-	return waveforms
+	if waveform_duration is not None:
+		return waveforms
+	else:
+		return waveforms, hp.sample_times.data[-1]
 
 
 def run_batch(n):
@@ -64,10 +71,14 @@ def run_batch(n):
 	#template_idx = np.ravel(template_ids[n:n+samples_per_batch]) % templates_per_file
 
 	t_ids = np.ravel(template_ids[n:n+samples_per_batch])
+
+	t_ids = [int(i) for i in t_ids]
 	batch_template_params = templates[t_ids]
 
 	t_templates = np.empty((n_templates * samples_per_batch, kmax-kmin), dtype=np.complex128)
 	#start = time.time()
+
+	# print(f'delta f: {delta_f} , f_final: {f_final} , kmin: {kmin}, kmax: {kmax}')
 	
 	for i in range(n_templates * samples_per_batch):
 		t_templates[i] = get_fd_waveform(mass1 = batch_template_params[i,1], mass2 = batch_template_params[i,2], 
@@ -99,12 +110,13 @@ def run_batch(n):
 					'ra': params['ra'][n+i], 'dec': params['dec'][n+i],
 					'pol': params['pol'][n+i], 'gps': params['gps'][n+i]}
 			
-			temp = get_projected_waveform_mp(args)
+			temp, merger_offset = get_projected_waveform_mp(args)
+			merger_offset = int(merger_offset*sample_rate)
 						
 			for ifo in ifos:
 				#this shouldn't be used, waveforms should be shorter than the noise.
 				w_len = np.min([len(temp[ifos.index(ifo)]), duration*sample_rate//2])
-				strains[ifo][i,duration*sample_rate//2 - w_len + offset: duration*sample_rate//2 + offset] = temp[ifos.index(ifo)]
+				strains[ifo][i,duration*sample_rate//2 - w_len + offset + merger_offset: duration*sample_rate//2 + offset + merger_offset] = temp[ifos.index(ifo)]
 				delta_t_h1 = all_detectors[ifo].time_delay_from_detector(other_detector=all_detectors[ifos[0]],
 													right_ascension=params['ra'][n+i],
 													declination=params['dec'][n+i],
@@ -147,29 +159,44 @@ if __name__ == "__main__":
 	index = args.index
 	config_file = args.config_file
 
+	if config_file:
+		print("loading args from a config file")
+		with open(config_file) as json_file:
+			config = json.load(json_file)
+			project_dir = config['project_dir']
+			noise_dir = config['noise_dir']
+			seed = config['seed']
+			fd_approximant = config['fd_approximant']
+			td_approximant = config['td_approximant']
+			noise_type = config['noise_type']
+			n_signal_samples = config['n_signal_samples']
+			n_noise_samples = config['n_noise_samples']
+			ifos = config['detectors']
+			seconds_before = config['seconds_before']
+			seconds_after = config['seconds_after']
+			f_lower = config['f_lower']
+			duration = config['duration']
+			delta_t = config['delta_t']
+			project_dir = config['project_dir']
+			noise_dir = config['noise_dir']
+			
+		for key, value in config.items():
+			print(key, value)
+
 	print("NOW STARTING JOB",index,"OF",total_jobs)
 
 
 	#defining some configs. some of these need to come from config files in the future.
-	duration = 1024
-	delta_t = 1.0/2048
 	sample_rate = int(1/delta_t)
-	f_lower = 18.0
 	delta_f = 1/duration
 	f_final = duration
-	fd_approximant = 'TaylorF2'
-	td_approximant = "SpinTaylorT4"
 
 	ifos = ['H1', 'L1']
 
-	seconds_before = 100
-	seconds_after = 400
 	offset = 0
 
 	fname = 'SNR.npy'
 
-	project_dir = "./configs/train1"
-	noise_dir = "./noise/test"
 	#template_dir = "./template_banks/BNS_lowspin_freqseries"
 
 	#waveforms_per_file = 100
@@ -193,27 +220,6 @@ if __name__ == "__main__":
 
 	offset = np.min((offset*sample_rate, duration//2))
 
-	import json
-	if config_file:
-		print("loading args from a config file")
-		with open(config_file) as json_file:
-			config = json.load(json_file)
-			project_dir = config['project_dir']
-			noise_dir = config['noise_dir']
-			seed = config['seed']
-			fd_approximant = config['fd_approximant']
-			td_approximant = config['td_approximant']
-			noise_type = config['noise_type']
-			n_signal_samples = config['n_signal_samples']
-			n_noise_samples = config['n_noise_samples']
-			ifos = config['detectors']
-			seconds_before = config['seconds_before']
-			seconds_after = config['seconds_after']
-			f_lower = config['f_lower']
-			
-		for key, value in config.items():
-			print(key, value)
-
 	samples_per_batch = min(100//(config['templates_per_waveform']),50)
 	print("SAMPLES_PER_BATCH:",samples_per_batch)
 
@@ -231,7 +237,9 @@ if __name__ == "__main__":
 	#Damon's definition of N. from testing, it's just the total length of the segment in samples
 	#N = (len(sample1)-1) * 2
 	N = int(duration/delta_t)
-	kmin, kmax = np_get_cutoff_indices(f_lower, None, delta_f, N)
+	# print(f'N: {N}, delta_f: {delta_f}, f_lower: {f_lower}')
+	kmin, kmax = np_get_cutoff_indices(f_lower, f_final, delta_f, N)
+	# print(f'kmin: {kmin}, kmax: {kmax}')
 
 
 	##CLEAN UP: JOB ARRAY STUFF GOING HERE FOR NOW
@@ -246,8 +254,6 @@ if __name__ == "__main__":
 	#since psd[0] is the sample frequencies, and the first frequency is always 0 Hz, psd[0][1] is sample frequency
 	psds = {}
 	t_psds = {}
-	import matplotlib.pyplot as plt
-	from GWSamplegen.noise_utils import load_psd
 
 	psds = load_psd(noise_dir, duration, ifos, f_lower, int(1/delta_t))
 
