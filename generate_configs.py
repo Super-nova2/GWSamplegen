@@ -535,8 +535,8 @@ prior = PriorDict()
 # CURRENTLY, M1 AND M2 ARE SWAPPED IF M2 IS SAMPLED ABOVE M1, WHICH ONLY WORKS WHEN THEY USE THE SAME
 # DISTRIBUTION. IF USING DIFFERENT DISTRIBUTIONS (EG. POWER LAW), BE CAREFUL AND TEST THIS CODE FIRST.
 if mass1prior != PowerLaw:
-    prior['mass1'] = constructPrior(mass1prior, mass1_min, mass1_max)
-    prior['mass2'] = constructPrior(mass2prior, mass2_min, mass2_max)
+    prior['mass1_source'] = constructPrior(mass1prior, mass1_min, mass1_max)
+    prior['mass2_source'] = constructPrior(mass2prior, mass2_min, mass2_max)
 
 prior['spin1z'] = constructPrior(spin1zprior, spin1z_min, spin1z_max)
 prior['spin2z'] = constructPrior(spin2zprior, spin2z_min, spin2z_max)
@@ -659,20 +659,20 @@ while generated_samples < n_signal_samples:
             pair = next(iter(draw_mass_pair_power(mass1_min, mass1_max, mass2_min, mass2_max, mass1_power, mass2_power)))
             m1.append(pair[0])
             m2.append(pair[1])
-        p['mass1'] = m1
-        p['mass2'] = m2
+        p['mass1_source'] = m1
+        p['mass2_source'] = m2
 
     cosmol = FlatwCDM(H0=67.9, Om0=0.3065, w0=-1)
     m1_df = []
     m2_df = []
     z = []
-    for key in range(len(p['mass1'])):
+    for key in range(len(p['mass1_source'])):
         z.append(cosmo.z_at_value(cosmol.luminosity_distance, u.Quantity(p['d'][key], u.Mpc)))
-        m1_df.append(p['mass1'][key] * (1 + z[key]))
-        m2_df.append(p['mass2'][key] * (1 + z[key]))
+        m1_df.append(p['mass1_source'][key] * (1 + z[key]))
+        m2_df.append(p['mass2_source'][key] * (1 + z[key]))
     p['z'] = z
-    p['m1_df'] = m1_df
-    p['m2_df'] = m2_df
+    p['mass1'] = m1_df
+    p['mass2'] = m2_df
 
 
     #adding non-sampled args to the parameters
@@ -779,7 +779,8 @@ while generated_samples < n_signal_samples:
                 params[i][detector + '_snr'] = snrs[i][detector]
 
             #ensure that mass2 < mass1
-            if params[i]['mass2'] > params[i]['mass1']:
+            if params[i]['mass2_source'] > params[i]['mass1_source']:
+                params[i]['mass1_source'], params[i]['mass2_source'] = params[i]['mass2_source'], params[i]['mass1_source']
                 params[i]['mass1'], params[i]['mass2'] = params[i]['mass2'], params[i]['mass1']
 
             #choose template waveform(s) for this sample, and add them to params[i]
@@ -794,7 +795,7 @@ while generated_samples < n_signal_samples:
                 params[i]['template_waveforms'] = []
                 cm = chirp_mass(params[i]['m1_df'], params[i]['m2_df'])
                 inj_args = {
-                    "mchirp": cm, "mass1": params[i]["m1_df"], "mass2": params[i]["m2_df"],
+                    "mchirp": cm, "mass1": params[i]["mass1"], "mass2": params[i]["mass2"],
                     "spin1z": params[i]["spin1z"], "spin2z": params[i]["spin2z"],
                     "i": params[i]["i"], "ra": params[i]["ra"], "dec": params[i]["dec"],
                     "pol": params[i]["pol"], "approx": approx_name, "d": 100,
@@ -869,20 +870,20 @@ if n_noise_samples > 0:
             pair = next(iter(draw_mass_pair_power(mass1_min, mass1_max, mass2_min, mass2_max, mass1_power, mass2_power)))
             m1.append(pair[0])
             m2.append(pair[1])
-        noise_p['mass1'] = m1
-        noise_p['mass2'] = m2
+        noise_p['mass1_source'] = m1
+        noise_p['mass2_source'] = m2
 
     cosmol = FlatwCDM(H0=67.9, Om0=0.3065, w0=-1)
     m1_df = []
     m2_df = []
     z = []
-    for key in range(len(noise_p['mass1'])):
+    for key in range(len(noise_p['mass1_source'])):
         z.append(cosmo.z_at_value(cosmol.luminosity_distance, u.Quantity(noise_p['d'][key], u.Mpc)))
-        m1_df.append(noise_p['mass1'][key] * (1 + z[key]))
-        m2_df.append(noise_p['mass2'][key] * (1 + z[key]))
+        m1_df.append(noise_p['mass1_source'][key] * (1 + z[key]))
+        m2_df.append(noise_p['mass2_source'][key] * (1 + z[key]))
     noise_p['z'] = z
-    noise_p['m1_df'] = m1_df
-    noise_p['m2_df'] = m2_df
+    noise_p['mass1'] = m1_df
+    noise_p['mass2'] = m2_df
 
     noise_p['gps'] = []
     noise_p['overlaps'] = np.zeros(shape=(n_signal_samples, templates_per_waveform))  # This is dummy data so it saves correctly
@@ -899,7 +900,8 @@ if n_noise_samples > 0:
 
     for i in range(n_noise_samples):
 
-        if noise_p['mass2'][i] > noise_p['mass1'][i]:
+        if noise_p['mass2_source'][i] > noise_p['mass1_source'][i]:
+            noise_p['mass1_source'][i], noise_p['mass2_source'][i] = noise_p['mass2_source'][i], noise_p['mass1_source'][i]
             noise_p['mass1'][i], noise_p['mass2'][i] = noise_p['mass2'][i], noise_p['mass1'][i]
 
 
