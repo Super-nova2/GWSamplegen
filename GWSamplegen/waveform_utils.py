@@ -99,7 +99,7 @@ def choose_templates_new(templates, metricParams, n_templates, mass1, mass2, spi
     n_templates: int
         Number of templates to choose.
     limit: int
-        Maximum template index (sorted by distance) to consider. Templates are sleected randomly up to this limit.
+        Maximum template index (sorted by distance) to consider. Templates are selected randomly up to this limit.
     aXis: array_like
         Pre-computed xi parameters for the templates. If not provided, they will be computed here. 
         Use the aXis provided by load_pycbc_templates to significantly speed up template selection."""

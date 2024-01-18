@@ -765,7 +765,7 @@ print('done samples with injections')
 if n_signal_samples > 0:
     good_params_dict = {key: np.array([good_params[i][key] for i in range(len(good_params))][:n_signal_samples]) for key in good_params[0].keys()}
 
-np.save(project_dir+"/"+"params-10k-4000Mpc-USF.npy", good_params_dict)
+#np.save(project_dir+"/"+"params-10k-4000Mpc-USF.npy", good_params_dict)
 
 
 #generate noise samples. most of the parameters aren't used, but the masses are used to choose the templates.
@@ -858,7 +858,7 @@ if n_noise_samples > 0:
         good_params_dict = noise_p
 
 #np.save(project_dir+"/"+"noise_params.npy", noise_p)
-np.save(project_dir+"/"+"params-10k-4000Mpc-USF.npy", good_params_dict)
+np.save(project_dir+"/"+"params.npy", good_params_dict)
 
 #save the arguments used to generate the parameters to a file
 

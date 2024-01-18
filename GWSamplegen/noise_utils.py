@@ -29,12 +29,35 @@ import time
 
 #TODO: handle arbitrary groups of interferometers. Assume each noise file in a dir has the same ifos
 	
+from GWSamplegen.waveform_utils import t_at_f
+
+def load_gps_blacklist(f_lower, event_file = '../noise/segments_event_gpstimes.json'):
+	with open(event_file) as f:
+		events = json.load(f)['events']
+	gps_blacklist = []
+	for event in events:
+
+		if events[event]['mass_1_source'] is not None and events[event]['mass_2_source'] is not None \
+			and events[event]['redshift'] is not None and events[event]['GPS'] is not None:
+			
+			m1_det = events[event]['mass_1_source'] * (1 + events[event]['redshift'])
+			m2_det = events[event]['mass_2_source'] * (1 + events[event]['redshift'])
+			start = np.floor(events[event]['GPS'] - t_at_f(m1_det, m2_det, f_lower))
+			end = np.ceil(events[event]['GPS'] + 1)
+			gps_blacklist.append(np.arange(start, end))
+
+	return np.sort(np.concatenate(gps_blacklist))
+
+
+
 def get_valid_noise_times(
 	noise_dir: str,
 	noise_len: int,
 	min_step: int = 1,
 	start_time: int = None,
 	end_time: int = None,
+	blacklisting: bool = True,
+	f_lower = 30
 ) -> (List[int], np.ndarray, List[str]):
 	"""multipurpose function to return a list of valid start times, list of noise file paths and deconstructed file names 
 	
@@ -97,7 +120,7 @@ def get_valid_noise_times(
 		times = np.arange(path[1], path[1]+path[2] - noise_len, min_step)
 		if path[1] + path[2] - noise_len not in times:
 
-			if int((path[1] + path[2] - noise_len) - times[-1]) == 1:
+			if int((path[1] + path[2] - noise_len) - times[-1]) != 1:
 				#this additional if condition is to solve the edge case of a 1 second noise segment.
 				times = np.append(times, path[1] + path[2] - noise_len)
 			
@@ -116,11 +139,14 @@ def get_valid_noise_times(
 	valid_times = np.sort(valid_times)
 	
 	#remove any GPS times that are too close to detected events
-	#TODO: add some way of specifying the event list that isn't just my folder
-	gps_blacklist = np.loadtxt("/fred/oz016/alistair/GWSamplegen/noise/segments/gps_blacklist.txt")
-	n_blacklisted = len(np.where(np.isin(valid_times, gps_blacklist-noise_len//2))[0])
-	print("{} GPS times are too close to detected events and have been removed".format(n_blacklisted))
-	valid_times = np.delete(valid_times, np.where(np.isin(valid_times, gps_blacklist-noise_len//2)))
+
+	if blacklisting:
+		
+		gps_blacklist = load_gps_blacklist(f_lower, "../noise/segments/event_gpstimes.json")
+		#gps_blacklist = np.loadtxt("/fred/oz016/alistair/GWSamplegen/noise/segments/gps_blacklist.txt")
+		n_blacklisted = len(np.where(np.isin(valid_times, gps_blacklist-noise_len//2))[0])
+		print("{} GPS times are too close to detected events and have been removed".format(n_blacklisted))
+		valid_times = np.delete(valid_times, np.where(np.isin(valid_times, gps_blacklist-noise_len//2)))
 
 	#reconstruct the file paths from the start times and ifo_list
 	file_list = [noise_dir +"/"+ ifo_list +"-"+ path[1] +"-"+ path[2] +".npy" for path in paths]
