@@ -9,6 +9,7 @@
     "project_dir": "./configs/real_train_astrophysical",
     "noise_dir": "./noise/O3_first_week_1024",
     "noise_type": "Real",
+    "template_bank": "PyCBC_98_aligned_spin",
     "templates_per_waveform": 10,
     "template_range": 250,
     "template_selection": "snr",
