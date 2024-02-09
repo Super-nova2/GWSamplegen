@@ -23,18 +23,23 @@ from pycbc.types.timeseries import TimeSeries
 from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate, inverse_spectrum_truncation
 import json
-
 import time
-
+from GWSamplegen.waveform_utils import t_at_f
+from pathlib import Path
 
 #TODO: handle arbitrary groups of interferometers. Assume each noise file in a dir has the same ifos
-	
-from GWSamplegen.waveform_utils import t_at_f
 
-def load_gps_blacklist(f_lower, event_file = '../noise/segments_event_gpstimes.json'):
+def load_gps_blacklist(
+	f_lower: int, 
+	event_file: Path = '../noise/segments_event_gpstimes.json'
+) -> np.ndarray:
+	"""Load a .json file containing real event data, for the purpose of removing valid GPS times so that
+	we don't accidentally include real events in training sets or background data."""
+	
 	with open(event_file) as f:
 		events = json.load(f)['events']
 	gps_blacklist = []
+
 	for event in events:
 
 		if events[event]['mass_1_source'] is not None and events[event]['mass_2_source'] is not None \
@@ -58,19 +63,45 @@ def get_valid_noise_times(
 	end_time: int = None,
 	blacklisting: bool = True,
 	f_lower = 30
-) -> (List[int], np.ndarray, List[str]):
-	"""multipurpose function to return a list of valid start times, list of noise file paths and deconstructed file names 
+) -> (List[int], np.ndarray, List[Path]):
+	"""multipurpose function to return a list of valid GPS start times, a list of noise file paths 
+	and a list of deconstructed file names.
+
+	Parameters
+	----------
 	
-	noise_dir: directory containing noise files
-	noise_len: minimum length of noise segments to consider
-	start_time: if specified, the start of the time window to consider. Otherwise, all noise in noise_dir will be used.
-	end_time: if specified, the end of the time window to consider
+	noise_dir: str
+		directory containing noise files
 
-	returns:
+	noise_len: int
+		minimum length of noise segments to consider. Any file shorter than noise_len in noise_dir are ignored.
+		This should be the duration of noise you're injecting signals into.
 
-	valid_times: list of valid start times for noise segments
-	paths: array of deconstructed file names, giving detector info, segment start time and duration
-	file_list: list of noise file paths in chronological order
+	min_step: int
+		If specified, will ensure that valid times are min_step seconds apart from each other. Used for background
+		and injection runs to step through noise files. Should be at most noise_len minus the longest filter used.
+		If not specified, will produce 1 second steps of noise times which can be used for making training/testing sets.
+
+	start_time: int
+		if specified, the start of the time window to consider. Otherwise, all noise in noise_dir will be used.
+	
+	end_time: int
+		if specified, the end of the time window to consider
+	
+	blacklisting: bool
+		if True, will remove any GPS times that are too close to detected events. Defaults to True.
+
+	Returns
+	-------
+
+	valid_times: List[int] 
+		A list of valid start times for noise segments
+
+	paths: np.ndarray
+		array of deconstructed file names, giving detector info, segment start time and segment duration
+	
+	file_list List[Path]: 
+		list of noise file paths in chronological order
 	"""
 
 	valid_times = np.array([])
@@ -91,21 +122,15 @@ def get_valid_noise_times(
 			if start_time is not None and end_time is not None:
 				if int(path[1]) <= start_time and int(path[1]) + int(path[2][:-4]) - start_time >= noise_len:
 					valid_paths.append(path)
-					print("path valid, starts before", path)
 				
 				elif int(path[1]) >= start_time and int(path[1]) + int(path[2][:-4]) <= end_time:
 					valid_paths.append(path)
-					print("path valid, contained", path)
-
 				
 				elif int(path[1]) < end_time and int(path[1]) + int(path[2][:-4]) - end_time >= noise_len:
-					
 					valid_paths.append(path)
-					print("path valid, ends after", path)
 
 				else:
 					pass
-					#print("path not valid", path)
 			
 			else:
 				valid_paths.append(path)
@@ -115,13 +140,12 @@ def get_valid_noise_times(
 		path[1] = int(path[1])
 		path[2] = int(path[2][:-4])
 
-		#print(path[1], path[2])
-
 		times = np.arange(path[1], path[1]+path[2] - noise_len + 1, min_step)
 		if path[1] + path[2] - noise_len not in times:
 
 			if int((path[1] + path[2] - noise_len) - times[-1]) != 1:
-				#this additional if condition is to solve the edge case of a 1 second noise segment.
+				#This if-else condition is to solve the edge case of a 1 second noise segment.
+				#only relevant if min_step is not 1.
 				times = np.append(times, path[1] + path[2] - noise_len)
 			
 			else:
@@ -144,7 +168,6 @@ def get_valid_noise_times(
 		
 		#TODO: make this work with arbitrary folder location. relative path should be the same...
 		gps_blacklist = load_gps_blacklist(f_lower, "/fred/oz016/alistair/GWSamplegen/noise/segments/event_gpstimes.json")
-		#gps_blacklist = np.loadtxt("/fred/oz016/alistair/GWSamplegen/noise/segments/gps_blacklist.txt")
 		n_blacklisted = len(np.where(np.isin(valid_times, gps_blacklist-noise_len//2))[0])
 		print("{} GPS times are too close to detected events and have been removed".format(n_blacklisted))
 		valid_times = np.delete(valid_times, np.where(np.isin(valid_times, gps_blacklist-noise_len//2)))
@@ -155,7 +178,12 @@ def get_valid_noise_times(
 	return valid_times, paths, file_list
 
 
-def load_noise(noise_dir):
+def load_noise(
+	noise_dir: Path
+) -> List[np.ndarray]:
+	
+	"""Loads noise segments from a directory into memory for fast processing."""
+
 	_,_, fps = get_valid_noise_times(noise_dir,0)
 
 	segments = []
@@ -176,25 +204,48 @@ def fetch_noise_loaded(
 
 	"""Fetch an array of noise segments from a list of noise files.
 	Supports timeslides by taking a list of start times.
+
+	Parameters
+	----------
 	
-	noise_list: list of noise files loaded into memory
-	noise_len: length of noise segment to fetch
-	noise_start_time: list of start times for noise segments
-	sample_rate: sample rate of noise
-	paths: array of noise file paths"""
+	noise_list: List[np.ndarray] 
+		List of noise files loaded into memory. Usually generated by `load_noise`.
+	
+	noise_len: int
+		Length of noise segment to fetch, in seconds.
+
+	noise_start_time: List[int]
+		list of start times for each detector's noise. 
+		If not timesliding, this should just be a list of the same GPS time.
+
+	sample_rate: int
+		sample rate of noise.
+
+	paths: array of noise file paths, generated by `get_valid_noise_times`
+	
+	Returns
+	-------
+
+	noises: np.ndarray[float]
+		Array of noise segments, with shape (len(noise_start_time), noise_len*sample_rate)
+	"""
 
 	noises = np.empty(shape = (len(noise_start_time),noise_len*sample_rate))
 	
 	for i in range(len(noise_start_time)):
 		f_idx = np.searchsorted(paths[:,1].astype('int'), noise_start_time[i],side='right') -1
-		#to be able to fetch noise from ANY time, not just in integer steps, include sample_rate in the int()
 		start_idx = int((noise_start_time[i] - paths[f_idx,1].astype('int'))*sample_rate)
 		noises[i] = np.copy(noise_list[f_idx][i,start_idx:start_idx + noise_len * sample_rate])
 
 	return noises
 
+def generate_time_slides(
+	detector_data: List[int], 
+	min_distance: int
+) -> Tuple[int]:
+	
+	"""Generates a list of time slides from a list of noise segments. Currently superseded by `two_det_timeslide`."""
 
-def generate_time_slides(detector_data, min_distance):
 	num_detectors = len(detector_data)
 	data_lengths = [len(data) for data in detector_data]
 	indices = [list(range(length)) for length in data_lengths]
@@ -217,8 +268,26 @@ def generate_time_slides(detector_data, min_distance):
 				yield tuple(detector_data[i][sample_indices[i]] for i in range(num_detectors))
 
 	
+def two_det_timeslide(
+		detector_data: List[List[int]], 
+		min_distance: int
+) -> Tuple[int]:
+	
+	"""A generator that returns a time slide from a list of valid noise times.
+	Avoids creating time slides that are too similar to previous time slides.
+	
+	Parameters
+	----------
+	
+	detector_data: List[List[int]]
+		Lists of noise times for each detector. Can be generated by `get_valid_noise_times`, and is compatible with
+		noise time lists from `get_glitchy_times`.
+		
+	min_distance: int
+		Minimum distance between time slides. This is the minimum number of seconds between the start times of two noise segments.
+	"""
 
-def two_det_timeslide(detector_data, min_distance):
+
 	used_combinations = set()
 
 	data_lengths = [len(data) for data in detector_data]
@@ -244,29 +313,34 @@ def two_det_timeslide(detector_data, min_distance):
 
 #utilities for downloading noise for later use
 
-def overlapping_intervals(arr1, arr2):
+def overlapping_intervals(
+	arr1: List[Tuple[int]], 
+	arr2: List[Tuple[int]]):
 	"""
 	Find overlapping segments between two lists of segments from different
 	detectors.
 
-	Designed to be used with the outputs of get_seg_list as the inputs.
+	Designed to be used with the outputs of `get_seg_list` as the inputs.
 
-	Keyword arguments:
-	arr1 -- segment list of first detector
-	arr1 -- segment list of second detector
+	Parameters
+	----------
+
+	arr1: List[Tuple[int]]
+		List of segments from the first detector
+	
+	arr2: List[Tuple[int]]
+		List of segments from the second detector
+
 	"""
 	res = []
 	arr1_pos = 0
 	arr2_pos = 0
 	len_arr1 = len(arr1)
 	len_arr2 = len(arr2)
-	# //Iterate over all intervals and store answer
+	# Iterate over all intervals and store answer
 	while arr1_pos < len_arr1 and arr2_pos < len_arr2:
 		arr1_seg = arr1[arr1_pos]
 		arr2_seg = arr2[arr2_pos]
-
-		# print(arr1_seg)
-		# print(arr2_seg)
 
 		# arr1_seg fully inside of arr2_seg
 		if arr1_seg[0] >= arr2_seg[0] and arr1_seg[1] <= arr2_seg[1]:
@@ -302,15 +376,32 @@ def overlapping_intervals(arr1, arr2):
 	return res
 
 
-def get_seg_list(file_name, macrostart, macroend):
+def get_seg_list(
+	file_name: Path, 
+	macrostart: int, 
+	macroend: int
+) -> List[Tuple[int]]:
 	"""
 	Get a list of segments from a single detector segment file bounded
-	by a GPS time window
+	by a GPS time window.
 
-	Keyword arguments:
-	file_name -- path to detector's segment list
-	macrostart -- Start GPS time of overlap window
-	macroend -- End GPS time of overlap window
+	Parameters
+	----------
+
+	file_name: Path
+		path to detector's segment list
+
+	macrostart: int
+		Start GPS time of overlap window
+	
+	macroend: int
+		End GPS time of overlap window
+
+	Returns
+	-------
+
+	good_segs: List[Tuple[int]]
+		List of segments from the detector within the GPS time window
 	"""
 	file = open(file_name, "r")
 
@@ -333,16 +424,40 @@ def get_seg_list(file_name, macrostart, macroend):
 	return good_segs
 
 
-def combine_seg_list(file_h1, file_l1, macrostart, macroend, min_duration):
+def combine_seg_list(
+	file_h1: Path, 
+	file_l1: Path, 
+	macrostart: int, 
+	macroend: int, 
+	min_duration: int
+) -> (List[Tuple[int]], List[Tuple[int]], List[Tuple[int]]):
 	"""
 	Find overlapping segments between two detectors within a window
 	defined by two GPS times.
 
-	Keyword arguments:
-	file_h1 -- path to H1 complete segment list
-	file_l1 -- path to L1 complete segment list
-	macrostart -- Start GPS time of overlap window
-	macroend -- End GPS time of overlap window
+	Parameters
+	----------
+
+	file_h1: Path
+		path to H1 complete segment list
+	
+	file_l1: Path
+		path to L1 complete segment list
+	
+	macrostart: int
+		Start GPS time of overlap window
+	
+	macroend: int
+		End GPS time of overlap window
+
+	min_duration: int
+		Minimum duration of segments to consider
+
+	Returns
+	-------
+
+	good_segs: List[Tuple[int]]
+		List of segments overlapping between the two detectors
 	"""
 	good_segs_h1 = get_seg_list(file_h1, macrostart, macroend)
 	good_segs_l1 = get_seg_list(file_l1, macrostart, macroend)
@@ -358,12 +473,18 @@ def combine_seg_list(file_h1, file_l1, macrostart, macroend, min_duration):
 #PSD UTILS
 
 def construct_noise_PSD(
-	#segments: List[np.ndarray],
 	noise_paths: List[str]
-	#path: str
-):
-	"""Create an averaged PSD of noise segments. This way of doing things is fine so long as the noise is stationary
+) -> None:
+	"""Create and save an averaged PSD of noise segments. 
+	This way of doing things is fine so long as the noise is stationary
 	(which it is provided the segments do not span longer than ~1-2 weeks.)
+
+	Parameters
+	----------
+
+	noise_paths: List[str]
+		List of paths to noise segments, from `get_valid_noise_times`. The PSD is automatically saved
+		to the same directory as the noise segments.
 	"""
 
 	segments = []
@@ -399,13 +520,42 @@ def construct_noise_PSD(
 	#return ifo_psds
 	np.save(os.path.dirname(noise_paths[0]) + "/psd.npy", ifo_psds)
 
+
 def load_psd(
 	noise_dir: str,
 	duration: int,
 	ifos: List[str],
 	f_lower: int,
 	sample_rate: int
-):
+) -> np.ndarray[float]:
+	
+	"""Load the PSD of each interferometer from a noise directory.
+	
+	Parameters
+	----------
+	
+	noise_dir: str
+		Path to the directory containing noise files.
+	
+	duration: int
+		Target length of the noise segments in seconds.
+	
+	ifos: List[str]
+		List of interferometers to load PSDs for.
+	
+	f_lower: int
+		Lower frequency cutoff for the PSDs.
+	
+	sample_rate: int
+		Sample rate of the noise segments.
+	
+	Returns
+	-------
+
+	psds: np.ndarray[float]
+		Array of PSDs, with shape (len(ifos), len(psd_freqs))
+		"""
+
 	with open(noise_dir+ '/args.json') as f:
 		args = json.load(f)
 		ifo_list = args['detectors']
