@@ -424,6 +424,7 @@ if config_file:
         n_noise_samples = config['n_noise_samples']
         glitch_frac = config['glitch_frac']
         project_dir = config['project_dir']
+        template_bank = config['template_bank']
         bank_type = config['bank_type']
         template_range = config['template_range']
         template_selection = config['template_selection']
@@ -975,6 +976,7 @@ args = {
     "project_dir": project_dir,
     "noise_dir": noise_dir,
     "noise_type": noise_type,
+    "template_bank": template_bank,
     "templates_per_waveform": templates_per_waveform,
     "template_range": template_range,
     "template_selection": template_selection,
