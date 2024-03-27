@@ -3,6 +3,10 @@
 #This is a modified version of a file from the mldatafind repository, available here:
 #https://github.com/ML4GW/mldatafind/blob/main/mldatafind/find.py
 
+#note: in find.py, n_samples definition in _estimate_memory needs to be: 
+#n_samples = int(n_channels * duration * sample_rate)
+#some strange bug causes it to think it's a 32bit LIGO gps time
+
 import logging
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait

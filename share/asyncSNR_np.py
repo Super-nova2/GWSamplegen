@@ -1,3 +1,6 @@
+""" Generate a dataset of SNR time series for a given set of parameters and noise segments."""
+
+
 import os
 import multiprocessing as mp
 import argparse
@@ -23,6 +26,8 @@ from pycbc.types import FrequencySeries
 from pycbc.types.timeseries import TimeSeries
 from pycbc.waveform import get_fd_waveform, get_td_waveform
 import pycbc.noise
+
+import time 
 
 from astropy.utils import iers
 iers.conf.auto_download = False
@@ -196,6 +201,8 @@ if __name__ == "__main__":
 	offset = 0
 
 	fname = 'SNR.npy'
+	#TODO: make it so we can choose between saving complex vs abs SNR
+	fname = 'SNR_abs.npy'
 
 	#template_dir = "./template_banks/BNS_lowspin_freqseries"
 
@@ -264,16 +271,27 @@ if __name__ == "__main__":
 	#	t_psds[ifos[i]] = tf.convert_to_tensor(psds[ifos[i]], dtype=tf.complex128)
 	#	t_psds[ifos[i]] = tf.slice(t_psds[ifos[i]], begin=[kmin], size=[kmax-kmin])
 
+	while True:
+		try:
+			#create an array on disk that we will save the samples to.
+			if not os.path.exists(project_dir + "/" + fname):
+				print("FILE DOES NOT EXIST, PROCESS {} IS CREATING IT".format(index))
+				#TODO: make it so we can choose between absolute value and complex64
+				#fp = np.memmap(project_dir + "/" + fname, dtype=np.complex64, mode='w+', 
+				#			shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
+				fp = np.memmap(project_dir + "/" + fname, dtype=np.float32, mode='w+', 
+							shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
+			else:
+				print("FILE EXISTS, PROCESS {} IS LOADING IT".format(index))
+				#fp = np.memmap(project_dir + "/" + fname, dtype=np.complex64, mode='r+', 
+				#			shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
+				fp = np.memmap(project_dir + "/" + fname, dtype=np.float32, mode='r+', 
+							shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
 
-	#create an array on disk that we will save the samples to.
-	if not os.path.exists(project_dir + "/" + fname):
-		print("FILE DOES NOT EXIST, PROCESS {} IS CREATING IT".format(index))
-		fp = np.memmap(project_dir + "/" + fname, dtype=np.complex64, mode='w+', 
-					shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
-	else:
-		print("FILE EXISTS, PROCESS {} IS LOADING IT".format(index))
-		fp = np.memmap(project_dir + "/" + fname, dtype=np.complex64, mode='r+', 
-					shape=(len(ifos),n_templates*len(params['mass1']), (seconds_before + seconds_after)*sample_rate), offset=128)
+			break
+		except:
+			print("error on file creation, waiting a bit")
+			time.sleep(1)
 
 	#detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 	print("file will have shape ", fp.shape)
@@ -281,7 +299,6 @@ if __name__ == "__main__":
 	##################################################calculate the SNR
 
 	print("finished loading data, starting SNR calculation")
-	import time 
 
 	allstart = time.time()
 
@@ -316,8 +333,8 @@ if __name__ == "__main__":
 		for i in range(mp_batch):
 			#t_templates, strains = results[i]
 			for ifo in ifos:
-
-				fp[ifos.index(ifo)][(i)*n_templates*samples_per_batch + n_templates*n:(i+1)*n_templates*samples_per_batch + n_templates*n] = results[i][ifo]
+				#TODO: again, fix abs vs complex
+				fp[ifos.index(ifo)][(i)*n_templates*samples_per_batch + n_templates*n:(i+1)*n_templates*samples_per_batch + n_templates*n] = np.abs(results[i][ifo])
 
 		#garbage collect
 		del results

@@ -43,6 +43,7 @@ from bilby.core.prior import (
     PriorDict,
     Sine,
     Uniform,
+    Triangular,
 )
 from bilby.gw.prior import UniformComovingVolume, UniformSourceFrame
 
@@ -304,7 +305,7 @@ f_lower = 18
 delta_t = 1/2048
 
 #If possible, make waveform_length a power of 2. This reduces error between pycbc and tensorflow in the SNR calculation.
-waveform_length = 1024
+duration = 1024
 
 seconds_before = 1
 seconds_after = 1
@@ -436,7 +437,7 @@ if config_file:
         fd_approximant = config['fd_approximant']
         f_lower = config['f_lower']
         delta_t = config['delta_t']
-        waveform_length = config['duration']
+        duration = config['duration']
         seconds_before = config['seconds_before']
         seconds_after = config['seconds_after']
         detectors = config['detectors']
@@ -545,21 +546,26 @@ prior['spin2z'] = constructPrior(spin2zprior, spin2z_min, spin2z_max)
 prior['ra'] = constructPrior(Uniform, ra_min * 2 * np.pi, ra_max * 2 * np.pi, boundary = 'periodic')
 prior['dec'] = constructPrior(dec_prior, np.pi * ra_min - np.pi/2, np.pi * ra_max - np.pi/2)
 
-prior['d'] = constructPrior(d_prior, d_min, d_max, name = 'luminosity_distance')
+if d_prior == Triangular:
+    print("triangular distance prior")
+    prior['d'] = constructPrior(d_prior, d_min, d_max, mode = d_max)
+else:
+    prior['d'] = constructPrior(d_prior, d_min, d_max, name = 'luminosity_distance')
+
 prior['i'] = constructPrior(inc_prior, inc_min * np.pi, inc_max * np.pi)
 prior['pol'] = constructPrior(pol_prior, pol_min * np.pi *2, pol_max * np.pi *2)
 
 if d_eff_scaling:
     prior['d_eff'] = constructPrior(d_eff_prior, d_eff_min, d_eff_max, name = 'luminosity_distance')
 
-valid_times, _, _ = get_valid_noise_times(noise_dir,waveform_length)
+valid_times, _, _ = get_valid_noise_times(noise_dir,duration)
 
 print(len(valid_times), "GPS times available")
 
 #load PSD 
 
 
-psds = load_psd(noise_dir, waveform_length, detectors, f_lower, int(1/delta_t))
+psds = load_psd(noise_dir, duration, detectors, f_lower, int(1/delta_t))
 
 all_detectors = {'H1': Detector('H1'), 'L1': Detector('L1'), 'V1': Detector('V1'), 'K1': Detector('K1')}
 
@@ -577,13 +583,14 @@ approx_name, approx_phase_order = legacy_approximant_name(td_approximant)
 hp, _ = get_td_waveform(mass1=template_bank_params[0,1], mass2=template_bank_params[0,2], 
 						delta_t=delta_t, f_lower=f_lower, approximant=approx_name, phase_order=approx_phase_order)
 #TODO: maybe replace with the t_at_f function 
+#from GWSamplegen.waveform_utils import t_at_f
 
 max_waveform_length = len(hp) * delta_t + 1 #adding a safety factor of 1 second
 max_waveform_length = max(32, int(np.ceil(max_waveform_length/10)*10)) #rounding up to the nearest 10 seconds / setting to 12 for BBHs
 print("max waveform length: ", max_waveform_length)
-if waveform_length < 2*max_waveform_length:
-    print(f"Desired waveform_length of {waveform_length} seconds for generating samples is less than two times the max_waveform_length of {max_waveform_length} seconds of your injection parameter space. This will mean that samples positioned at the middle of your sample will encounter issues due to filter wrap around in matched filtering.")
-    print("Please fix the waveform_length input parameter.")
+if duration < 2*max_waveform_length:
+    print(f"Desired duration of {duration} seconds for generating samples is less than two times the max_waveform_length of {max_waveform_length} seconds of your injection parameter space. This will mean that samples positioned at the middle of your sample will encounter issues due to filter wrap around in matched filtering.")
+    print("Please fix the duration input parameter.")
     exit()
 
 SNR_thresh = 6
@@ -593,6 +600,7 @@ if noise_type == "Real":
     glitchless_times = {}
     glitchy_times = {}
     glitchy_freqs = {}
+    glitchy_SNRs = {}
 
     for ifo in detectors:
         glitchy_times[ifo] = []
@@ -601,12 +609,13 @@ if noise_type == "Real":
 
     for ifo in detectors:
         
-        glitchy, glitchless, freq = get_glitchy_times(noise_dir+"/{}_glitches.npy".format(ifo),
-                                        waveform_length, valid_times, max_waveform_length, SNR_thresh, f_lower, seconds_before, seconds_after)
+        glitchy, glitchless, freq, glitch_snr = get_glitchy_times(noise_dir+"/{}_glitches.npy".format(ifo),
+                                        duration, valid_times, max_waveform_length, SNR_thresh, f_lower, seconds_before, seconds_after)
         
         glitchless_times[ifo] = glitchless
         glitchy_times[ifo] = glitchy
         glitchy_freqs[ifo] = freq
+        glitchy_SNRs[ifo] = glitch_snr
 
 
     #create timeslide generators
@@ -632,7 +641,7 @@ if bank_type == "spiir":
     print(f"Generating tasks array required to load template waveforms.")
     template_tasks = []
     for i in range(len(template_bank_params)):
-        template_tasks.append([template_bank_params[i, :], delta_t, f_lower, waveform_length])
+        template_tasks.append([template_bank_params[i, :], delta_t, f_lower, duration])
 
     print("Starting generation of template waveforms")
     # load template bank waveforms to memory
@@ -700,7 +709,8 @@ while generated_samples < n_signal_samples:
                     for j in range(len(detectors)):
                         glitch_idx = np.where(glitch_time[j] == glitchy_times[detectors[j]])[0][0]
                         glitch_time[j] = get_glitchy_gps_time(valid_times, p['mass1'][i], p['mass2'][i], 
-                                                        glitch_time[j], glitchy_freqs[detectors[j]][glitch_idx])
+                                                        glitch_time[j], glitchy_freqs[detectors[j]][glitch_idx],
+                                                        glitchy_SNRs[detectors[j]][glitch_idx])
                 
                 elif np.any([p[det + "_glitch"][i] for det in detectors]):
                     #1 detector glitch
@@ -708,7 +718,8 @@ while generated_samples < n_signal_samples:
                     glitch_time = list(next(one_glitch_generator[detectors[glitchy_ifo]]))
                     glitch_idx = np.where(glitch_time[glitchy_ifo] == glitchy_times[detectors[glitchy_ifo]])[0][0]
                     glitch_time[glitchy_ifo] = get_glitchy_gps_time(valid_times, p['mass1'][i], p['mass2'][i],
-                                                                    glitch_time[glitchy_ifo], glitchy_freqs[detectors[glitchy_ifo]][glitch_idx])
+                                                                    glitch_time[glitchy_ifo], glitchy_freqs[detectors[glitchy_ifo]][glitch_idx],
+                                                                    glitchy_SNRs[detectors[glitchy_ifo]][glitch_idx])
                 
                 else:
                     #no glitches
@@ -718,6 +729,9 @@ while generated_samples < n_signal_samples:
 
             else:
                 #TODO: this is legacy code, and should be removed once it won't cause issues
+                #This code assumes the glitch fraction is a float, 
+                #and that each detector has an equal chance of having a glitch.
+                #glitches are now a list of floats, one for each ifo.
                 if np.random.uniform(0,1) < glitch_frac:
                     #if the glitch fraction is a float, each detector has an equal chance of having the glitch
                     glitchy_ifo = np.random.choice(detectors)
@@ -801,7 +815,7 @@ while generated_samples < n_signal_samples:
                     "i": params[i]["i"], "ra": params[i]["ra"], "dec": params[i]["dec"],
                     "pol": params[i]["pol"], "approx": approx_name, "d": 100,
                     "gps": params[i]["gps"], "f_low": f_lower, "delta_t": delta_t,
-                    "duration": waveform_length, "phase_order": approx_phase_order
+                    "duration": duration, "phase_order": approx_phase_order
                 }
                 arg_closest = (np.abs(template_bank_params[:,0] - cm)).argmin()
                 minimum = max(arg_closest - template_range, 0)
@@ -850,6 +864,25 @@ while generated_samples < n_signal_samples:
 
 
 print('done samples with injections')
+
+if not d_eff_scaling and np.max([i['network_snr'] for i in good_params]) < 500:
+    #rescale the distance to ensure at least one sample has a network SNR of 500
+    # this is to ensure that the distance prior is well sampled.
+    # TODO: will need a flag for this in the future, as it's not always necessary.
+
+    print("Rescaling a sample to ensure at least one sample has a network SNR of 500")
+    max_snr_idx = np.argmax([i['network_snr'] for i in good_params])
+    max_snr = good_params[max_snr_idx]['network_snr']
+    max_snr_distance = good_params[max_snr_idx]['d']
+    
+    rescale = 500/max_snr
+
+    rescale *= np.random.uniform(1, 1.2)# + np.random.uniform(0, 0.2)
+
+    good_params[max_snr_idx]['d'] = good_params[max_snr_idx]['d']/rescale
+    good_params[max_snr_idx]['H1_snr'] = good_params[max_snr_idx]['H1_snr']*rescale
+    good_params[max_snr_idx]['L1_snr'] = good_params[max_snr_idx]['L1_snr']*rescale
+    good_params[max_snr_idx]['network_snr'] = good_params[max_snr_idx]['network_snr']*rescale
 
 #save the injection parameters to a file
 #convert from a list of dictionaries to a dictionary of lists
@@ -919,7 +952,8 @@ if n_noise_samples > 0:
                     for j in range(len(detectors)):
                         glitch_idx = np.where(glitch_time[j] == glitchy_times[detectors[j]])[0][0]
                         glitch_time[j] = get_glitchy_gps_time(valid_times, noise_p['mass1'][i], noise_p['mass2'][i], 
-                                                        glitch_time[j], glitchy_freqs[detectors[j]][glitch_idx])
+                                                        glitch_time[j], glitchy_freqs[detectors[j]][glitch_idx],
+                                                        glitchy_SNRs[detectors[j]][glitch_idx])
                 
                 elif np.any([noise_p[det + "_glitch"][i] for det in detectors]):
                     #1 detector glitch
@@ -927,7 +961,8 @@ if n_noise_samples > 0:
                     glitch_time = list(next(one_glitch_generator[detectors[glitchy_ifo]]))
                     glitch_idx = np.where(glitch_time[glitchy_ifo] == glitchy_times[detectors[glitchy_ifo]])[0][0]
                     glitch_time[glitchy_ifo] = get_glitchy_gps_time(valid_times, noise_p['mass1'][i], noise_p['mass2'][i],
-                                                                    glitch_time[glitchy_ifo], glitchy_freqs[detectors[glitchy_ifo]][glitch_idx])
+                                                                    glitch_time[glitchy_ifo], glitchy_freqs[detectors[glitchy_ifo]][glitch_idx],
+                                                                    glitchy_SNRs[detectors[glitchy_ifo]][glitch_idx])
                 
                 else:
                     #no glitches
@@ -936,6 +971,7 @@ if n_noise_samples > 0:
                 noise_p['gps'].append(glitch_time)
             
             else:
+                #TODO: this is also legacy code. remove.
                 if np.random.uniform(0,1) < glitch_frac:
                     glitchy_ifo = np.random.choice(detectors)
                     noise_p[glitchy_ifo + '_glitch'][i] = True
@@ -986,7 +1022,7 @@ args = {
     "fd_approximant": fd_approximant,
     "f_lower": f_lower,
     "delta_t": delta_t,
-    "duration": waveform_length,
+    "duration": duration,
     "seconds_before": seconds_before,
     "seconds_after": seconds_after,
     "detectors": detectors,
@@ -1042,5 +1078,6 @@ if n_signal_samples > 0:
         plt.hist(good_params_dict[detector+"_snr"][:n_signal_samples], bins = 100, alpha = 0.5)
 
     plt.xlabel("Injected SNR")
+    plt.yscale('log')
     #plt.xlim(0,30)
     plt.savefig(project_dir+"/injected_SNR.png")

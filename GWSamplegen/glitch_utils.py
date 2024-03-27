@@ -70,6 +70,7 @@ def get_glitchy_times(
 	no_glitch = np.array([])
 	glitch = np.array([])
 	frequency_list = np.array([])
+	snr_list = np.array([])
 	glitch_idxs = []
 
 	for i in range(len(glitch_array)):
@@ -83,7 +84,11 @@ def get_glitchy_times(
 		if include in valid_times:
 			glitch = np.hstack((glitch, include))
 			#deal with the edge case where the peak glitch frequency is below the cutoff
-			frequency_list = np.hstack((frequency_list, max(glitch_array[i,1], freq_cutoff))) 
+			frequency_list = np.hstack((frequency_list, 
+							   np.array([glitch_array[i,5], glitch_array[i,1], glitch_array[i,6]]))) 
+		
+			snr_list = np.hstack((snr_list, glitch_array[i,2]))
+			
 			glitch_idxs.append(i)
 		
 	no_glitch = np.unique(no_glitch)
@@ -98,16 +103,23 @@ def get_glitchy_times(
 	glitchless_times = valid_times[mask]
 	glitchy_times = glitch
 
+	#frequency list now contains fstart and fend for a glitch
+
+	frequency_list[frequency_list < freq_cutoff] = freq_cutoff
+	frequency_list = frequency_list.reshape(-1,3)
+
 	print("There are {} glitchy times and {} glitchless times in {}".format(len(glitchy_times), len(glitchless_times), glitch_file[-15:]))
 
-	return glitchy_times, glitchless_times, frequency_list
+	return glitchy_times, glitchless_times, frequency_list, snr_list
 
 def get_glitchy_gps_time(
 		valid_times: List[int],
 		mass1: float,
 		mass2: float, 
 		glitch_time: int, 
-		frequency: float
+		frequencies: float,
+		snr: float,
+		random_offset_snr_thresh: float = 50
 )-> int:
 	"""
 	Offset a glitchy time to ensure the glitch occurs in the SNR time series. This is necessary for BNS and NSBH samples,
@@ -124,6 +136,17 @@ def get_glitchy_gps_time(
 		Secondary mass of the waveform
 	glitch_time: int
 		Glitch time from get_glitchy_times
+	
+	frequencies: float
+		fstart, peak frequency, fend of the glitch
+	
+	snr: float
+		SNR of the glitch
+
+	random_offset_snr_thresh: float
+		Threshold SNR to use a random offset for the glitch time. 
+		If the SNR is below this threshold, the peak frequency is used to offset the glitch time.
+		Glitches above the SNR threshold can have the signal injected at a random frequency.
 
 	Returns
 	-------
@@ -136,9 +159,23 @@ def get_glitchy_gps_time(
 	and a warning is printed and the closest valid time is returned.
 	"""
 
-	t_offset = int(t_at_f(mass1,mass2,frequency))
-	if glitch_time + t_offset in valid_times:
-		return glitch_time + t_offset
+	t_offsets = t_at_f(mass1,mass2,frequencies)
+	if snr > random_offset_snr_thresh:
+		#print("Using Random offset")
+		#pick a random time between times[0] and times[2] to inject a glitch, with a preference for a time near times[1]
+		t_offsets[0] = np.mean(t_offsets[:2])
+		#print(t_offsets)
+		selected_time = int(np.random.triangular(t_offsets[2], t_offsets[1], t_offsets[0]))
+		
 	else:
-		print("WARNING: CANNOT OFFSET GLITCH ENOUGH TO ENSURE GLITCH APPEARS IN SNR TIME SERIES")
-		return valid_times[np.argmin(np.abs(valid_times - (glitch_time + t_offset)))]
+		#print("Can't use random offset")
+		#otherwise, just use the peak frequency to offset the glitch
+		selected_time = t_offsets[1]
+	
+	#print("selected time: ", selected_time)
+
+	if int(glitch_time + selected_time) in valid_times:
+		return int(glitch_time + selected_time)#, (glitch_time + t_offsets).astype(int)
+	else:
+		print("WARNING: CANNOT OFFSET GPS TIME ENOUGH TO ENSURE GLITCH APPEARS IN SNR TIME SERIES")
+		return valid_times[np.argmin(np.abs(valid_times - int(glitch_time + selected_time)))]
