@@ -1,47 +1,89 @@
+"""
+Matched filtering functions based on PyCBC's implementation of matched filtering, but optimised for 
+performing array-wise matched filtering on batches of samples and templates.
+"""
+
+
 import numpy as np
 
 
-def np_weighted_inner(one, two, weight):
-    """Compute weighted inner product of two frequency series, for the sigmasq rescaling.
+def np_weighted_inner(
+    one: np.ndarray, 
+    two: np.ndarray,
+    weight: np.ndarray
+) -> np.ndarray:
+    """
+    Compute weighted inner product of two frequency series, for the sigmasq rescaling.
 
-    Keyword arguments:
-        one: batch array of templates in frequency domain
-        two: batch array of templates in frequency domain
-        weight: noise PSD in frequency domain
+    Parameters
+    ----------
+
+    one: 
+        batch array of templates in frequency domain
+    two: 
+        batch array of templates in frequency domain
+    weight: 
+        noise PSD in frequency domain
         
-    Returns:
-        out: batch array of weighted inner products
+    Returns
+    -------
+
+    out: 
+        batch array of weighted inner products
     """
     return np.sum(np.conjugate(one) * two / weight, axis=1)
 
 
-def np_correlate(templates, samples):
-    """Compute correlation of templates and samples.
-
-    Keyword arguments:
-        templates: batch array of templates in frequency domain
-        samples: batch array of samples in frequency domain
-        
-    Returns:
-        out: batch array of correlated samples & templates
+def np_correlate(
+    templates: np.ndarray, 
+    samples: np.ndarray
+) -> np.ndarray:
     """
-    temp = np.conjugate(templates)[:]
-    temp *= samples
+    Compute correlation of templates and samples.
+
+    Parameters
+    ----------
+    templates: 
+        batch array of templates in frequency domain
+    samples: 
+        batch array of samples in frequency domain
+        
+    Returns
+    -------
+    out: 
+        batch array of correlated samples & templates
+    """
+    temp = np.conjugate(templates) * samples
     return temp
 
 
-def np_get_cutoff_indices(flow, fhigh, delta_f, N):
-    """Compute indexes of low and high frequency cutoffs.
+def np_get_cutoff_indices(
+    flow: int, 
+    fhigh: int, 
+    delta_f: int, 
+    N: int
+) -> (int, int):
+    
+    """
+    Compute indexes of low and high frequency cutoffs.
 
-    Keyword arguments:
-        flow: low frequency cutoff
-        fhigh: high frequency cutoff
-        delta_f: frequency series sampling rate (default 1.0/2048)
-        N: 
+    Parameters
+    ----------
+    flow: 
+        low frequency cutoff
+    fhigh: 
+        high frequency cutoff
+    delta_f: 
+        frequency series sampling rate
+    N: 
+        length of the samples
         
-    Returns:
-        kmin: index of low frequency cutoff
-        kmax: index of high frequency cutoff
+    Returns
+    -------
+    kmin: 
+        index of low frequency cutoff
+    kmax: 
+        index of high frequency cutoff
     """
     if flow:
         kmin = int(flow / delta_f)
@@ -71,26 +113,27 @@ def np_get_cutoff_indices(flow, fhigh, delta_f, N):
     return kmin,kmax
 
 
-def np_sigmasq(template, psd, N, kmin, kmax, delta_f):
-    """Batch compute template normalization to rescale SNR time series.
+def np_sigmasq(template, psd, delta_f):
+    """
+    Batch compute template normalisation to rescale SNR time series.
 
-    Keyword arguments:
-        template: batch array of templates in frequency domain
-        psd: array of PSD
-        N: 
-        kmin: index of low frequency cutoff
-        kmax: index of high frequency cutoff
-        delta_f: frequency series sampling rate (default 1.0/2048)
+    Parameters
+    ----------
+    template: 
+        batch array of templates in frequency domain
+    psd: 
+        array of PSD
+    delta_f: 
+        frequency series sampling rate (default 1.0/2048)
         
-    Returns:
-        template_norm: batch array of normalization constants
+    Returns
+    -------
+    template_norm: 
+        batch array of normalisation constants
     """
     norm = 4.0 * delta_f
     
-#     ht = htilde[kmin:kmax]
-    
-#     sq = np_weighted_inner(ht, ht, psd[kmin:kmax], dtype) ###XXX###
-    sq = np_weighted_inner(template, template, psd) ###XXX###
+    sq = np_weighted_inner(template, template, psd)
     h_norm = np.real(sq) * norm
     
     template_norm = ((4.0 * delta_f) / np.sqrt(h_norm)).astype(np.complex128)
@@ -99,29 +142,50 @@ def np_sigmasq(template, psd, N, kmin, kmax, delta_f):
     return template_norm
 
 
-def numpy_matched_filter(sample, template, psd, N, kmin, kmax, duration, delta_t=1.0/2048, flow=30):
-    """Batch compute SNR time series using matched filtering. Matched filtering is done row-wise for sample and template arrays.
+def numpy_matched_filter(
+    sample: np.ndarray, 
+    template: np.ndarray, 
+    psd: np.ndarray, 
+    N: int, 
+    kmin: int, 
+    kmax: int, 
+    duration: int, 
+    delta_t: float = 1.0/2048, 
+    flow: float = 30
+) -> np.ndarray:    
+    """Batch compute SNR time series using matched filtering. 
+        Matched filtering is done row-wise for sample and template arrays.
 
-    Keyword arguments:
-        sample: batch array of strain samples in frequency domain
-        template: batch array of templates in frequency domain
-        psd: array of PSD
-        N: length of the samples 
-        kmin: index of low frequency cutoff
-        kmax: index of high frequency cutoff
-        duration: strain time series duration (seconds)
-        delta_t: strain time series sampling rate (default 1.0/2048)
-        flow: low frequency cutoff
+    Parameters
+    ----------
+
+    sample: 
+        A 2d array of strain samples in frequency domain. Can be the same strain sample multiple times,
+        i.e. with np.repeat for matching with multiple templates.
+    template: 
+        A 2d array of templates in frequency domain
+    psd: 
+        PSD array
+    N: 
+        length of the samples 
+    kmin: 
+        index of low frequency cutoff
+    kmax: 
+        index of high frequency cutoff
+    duration: 
+        strain time series duration (seconds)
+    delta_t: 
+        strain time series sampling rate (default 1.0/2048)
+    flow: 
+        low frequency cutoff
         
-    Returns:
-        snr_ts: batch array of SNR time series
+    Returns
+    -------
+        snr_ts: 2d array of SNR time series
     """
     delta_f = 1.0 / duration
     tsamples = int(duration / delta_t)
     flen = int(2048 / delta_f) + 1
-
-    # Initialize _q output array
-    #_q = np.zeros(N, dtype=sample.dtype)
 
     # Correlate waveform with template
     sample_template_correlated = np_correlate(template, sample)
@@ -130,28 +194,60 @@ def numpy_matched_filter(sample, template, psd, N, kmin, kmax, duration, delta_t
     sample_template_correlated /= psd
 
     # Pad row to desired length
-    #paddings = [[0, 0], [kmin, _q.shape[0]-kmax]]
     paddings = [[0, 0], [kmin, N-kmax]]
     sample_template_correlated = np.pad(sample_template_correlated, paddings, 'constant')
 
     sample_template_correlated = np.fft.ifft(sample_template_correlated)
     sample_template_correlated *= len(sample_template_correlated[0])
 
-    # Calculate normalization constant
-    template_norm = np_sigmasq(template, psd, N, kmin, kmax, delta_f)
+    # Calculate normalisation constant
+    template_norm = np_sigmasq(template, psd, delta_f)
 
     # Rescale SNR timeseries
     snr_ts = sample_template_correlated * template_norm
 
-    snr_ts = snr_ts.astype(np.complex128)
+    snr_ts = snr_ts.astype(np.complex64)
 
     return snr_ts
 
 
-def mf_in_place(sample, psd, N, kmin, kmax, template_conj, template_norm):
+def mf_in_place(
+    sample: np.ndarray, 
+    psd: np.ndarray, 
+    N: int, 
+    kmin: int, 
+    kmax: int, 
+    template_conj: np.ndarray, 
+    template_norm: np.ndarray
+)-> np.ndarray:
     """A more optimised version of numpy_matched_filter. By precomputing template_conj with np.conjugate(template), 
-    and template_norm with np_sigmasq we can speed it up by about 20%.
-    This is only useful if you are matching the SAME template array multiple times, such as in a background run.
+    and template_norm with np_sigmasq we can speed up matched filtering by about 20% and reduce memory usage by half.
+    This is only useful if you are matching with the SAME template array with a diferent sample array multiple times, 
+    such as in a background run or injection run.
+
+    Parameters
+    ----------
+
+    sample:
+        A 2d array of strain samples in frequency domain. Can be the same strain sample multiple times,
+        i.e. with np.repeat for matching with multiple templates.
+    psd:
+        PSD array
+    N:
+        length of the samples
+    kmin:
+        index of low frequency cutoff
+    kmax:
+        index of high frequency cutoff
+    template_conj:
+        A 2d array of templates in frequency domain
+    template_norm:
+        Normalisation constants for the templates
+    
+    Returns
+    -------
+    sample * template_norm: 
+        2d array of SNR time series, in the same memory location as sample.
     """
 
     sample *= template_conj

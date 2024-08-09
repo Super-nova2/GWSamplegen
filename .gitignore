@@ -11,6 +11,7 @@ noise/*
 #configs contains all the generated SNR time series
 
 configs/*
+args/*
 
 *.log
 *.txt
@@ -22,9 +23,9 @@ configs/*
 
 load*
 
-*.json
+/*.json
+/*.sh
 
-test.sh
 
 glitches
 

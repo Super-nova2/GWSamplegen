@@ -1,23 +1,76 @@
+"""
+============
+Helper functions for inserting waveforms into glitchy noise
+============
+
+`get_glitchy_times` returns a list of glitchy times and glitchless times from a glitch file and a list of valid times.
+
+`get_glitchy_gps_time` takes a list of valid times from `get_valid_noise_times` and a glitchy time from `get_glitchy_times` 
+and offsets the glitchy time to ensure the glitch occurs in the SNR time series. This is necessary for BNS and NSBH samples,
+as the peak frequency of the glitch can be tens of seconds from the merger.
+"""
+
+
 import numpy as np
+from GWSamplegen.waveform_utils import t_at_f
+from typing import Iterator, List, Optional, Sequence, Tuple
+from pathlib import Path
 
-from .waveform_utils import t_at_f
+def get_glitchy_times(
+		glitch_file: Path, 
+		duration: int,
+		valid_times: List[int], 
+		longest_waveform: int, 
+		SNR_cutoff: float = 5.0, 
+		freq_cutoff: float = 0.0, 
+		seconds_before: int = 1, 
+		seconds_after: int = 1
+) -> (np.ndarray, np.ndarray, np.ndarray):
+	"""
+	Given a list of valid times and a glitch file from find_glitches.py, return a list of glitchy times and glitchless times.
 
+	Parameters
+	----------
 
+	glitch_file: Path
+		Path to a glitch file from find_glitches.py
+	duration: int
+		length of noise the waveforms are inserted into
+	valid_times: List[int]
+		List of valid times from get_valid_noise_times
+	longest_waveform: int
+		Length of the longest waveform in seconds
+	SNR_cutoff: float
+		Minimum SNR of glitches to consider
+	freq_cutoff: float
+		Minimum frequency of the glitches to consider
+	seconds_before: int
+		Number of seconds before the glitch to exclude from the glitchy times
+	seconds_after: int
+		Number of seconds after the glitch to exclude from the glitchy times
 
-def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_cutoff = 5, freq_cutoff = 0, seconds_before = 1, seconds_after = 1):
+	Returns
+	-------
+	glitchy_times: np.ndarray
+		List of glitchy times
+	glitchless_times: np.ndarray
+		List of glitchless times
+	frequency_list: np.ndarray
+		List of frequencies of the glitches
 
-	#longest_waveform is the rough length of the longest waveform in seconds
+	"""
 	glitch_data = np.load(glitch_file, allow_pickle=True).item()
 
 	glitch_array = np.array([glitch_data['time'], glitch_data['frequency'], glitch_data['snr'], 
 				glitch_data['tstart'], glitch_data['tend'], glitch_data['fstart'], glitch_data["fend"]]).T
 
-	# select only times with SNR and frequency above cutoff
-	glitch_array = glitch_array[(glitch_array[:,2] > SNR_cutoff) & (glitch_array[:,1] > freq_cutoff)]
+	# select only times with SNR and end frequency above cutoff.
+	glitch_array = glitch_array[(glitch_array[:,2] > SNR_cutoff) & (glitch_array[:,6] > freq_cutoff)]
 
 	no_glitch = np.array([])
 	glitch = np.array([])
 	frequency_list = np.array([])
+	snr_list = np.array([])
 	glitch_idxs = []
 
 	for i in range(len(glitch_array)):
@@ -30,14 +83,18 @@ def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_
 
 		if include in valid_times:
 			glitch = np.hstack((glitch, include))
-			frequency_list = np.hstack((frequency_list, glitch_array[i,1]))
+			#deal with the edge case where the peak glitch frequency is below the cutoff
+			frequency_list = np.hstack((frequency_list, 
+							   np.array([glitch_array[i,5], glitch_array[i,1], glitch_array[i,6]]))) 
+		
+			snr_list = np.hstack((snr_list, glitch_array[i,2]))
+			
 			glitch_idxs.append(i)
 		
 	no_glitch = np.unique(no_glitch)
 	
 	glitchmask = np.zeros(len(valid_times), dtype=bool)
 
-	#print(len(no_glitch))
 	mask = np.ones(len(valid_times), dtype=bool)
 	for i in range(len(valid_times)):
 		if valid_times[i] in no_glitch:
@@ -46,18 +103,79 @@ def get_glitchy_times(glitch_file, duration, valid_times, longest_waveform, SNR_
 	glitchless_times = valid_times[mask]
 	glitchy_times = glitch
 
+	#frequency list now contains fstart and fend for a glitch
+
+	frequency_list[frequency_list < freq_cutoff] = freq_cutoff
+	frequency_list = frequency_list.reshape(-1,3)
+
 	print("There are {} glitchy times and {} glitchless times in {}".format(len(glitchy_times), len(glitchless_times), glitch_file[-15:]))
 
-	return glitchy_times, glitchless_times, frequency_list#, glitch_idxs
+	return glitchy_times, glitchless_times, frequency_list, snr_list
 
+def get_glitchy_gps_time(
+		valid_times: List[int],
+		mass1: float,
+		mass2: float, 
+		glitch_time: int, 
+		frequencies: float,
+		snr: float,
+		random_offset_snr_thresh: float = 50
+)-> int:
+	"""
+	Offset a glitchy time to ensure the glitch occurs in the SNR time series. This is necessary for BNS and NSBH samples,
+	as the peak frequency of the glitch can be tens of seconds from the merger.
 
-def get_glitchy_gps_time(valid_times, mass1, mass2, glitch_time, frequency):
-	#move a glitchy sample's start time to ensure the peak frequency of the glitch will be in the SNR time series.
-	#not relevant for most BBH samples, but for BNS and NSBH the glitch's peak frequency can be tens of seconds from the merger.
-	t_offset = int(t_at_f(mass1,mass2,frequency))
-	if glitch_time + t_offset in valid_times:
-		return glitch_time + t_offset
+	Parameters
+	----------
+
+	valid_times: List[int]
+		List of valid times from get_valid_noise_times
+	mass1: float
+		Primary mass of the waveform
+	mass2: float
+		Secondary mass of the waveform
+	glitch_time: int
+		Glitch time from get_glitchy_times
+	
+	frequencies: float
+		fstart, peak frequency, fend of the glitch
+	
+	snr: float
+		SNR of the glitch
+
+	random_offset_snr_thresh: float
+		Threshold SNR to use a random offset for the glitch time. 
+		If the SNR is below this threshold, the peak frequency is used to offset the glitch time.
+		Glitches above the SNR threshold can have the signal injected at a random frequency.
+
+	Returns
+	-------
+	glitch_time: int
+		Offset glitch time
+
+	Warning
+	-------
+	If the glitch cannot be offset enough to ensure it appears in the SNR time series, 
+	and a warning is printed and the closest valid time is returned.
+	"""
+
+	t_offsets = t_at_f(mass1,mass2,frequencies)
+	if snr > random_offset_snr_thresh:
+		#print("Using Random offset")
+		#pick a random time between times[0] and times[2] to inject a glitch, with a preference for a time near times[1]
+		t_offsets[0] = np.mean(t_offsets[:2])
+		#print(t_offsets)
+		selected_time = int(np.random.triangular(t_offsets[2], t_offsets[1], t_offsets[0]))
+		
 	else:
-		#print(int(t_offset), glitch_time- valid_times[np.argmin(np.abs(valid_times - (glitch_time + t_offset)))] )
-		print("WARNING: CANNOT OFFSET GLITCH ENOUGH TO ENSURE GLITCH APPEARS IN SNR TIME SERIES")
-		return valid_times[np.argmin(np.abs(valid_times - (glitch_time + t_offset)))]
+		#print("Can't use random offset")
+		#otherwise, just use the peak frequency to offset the glitch
+		selected_time = t_offsets[1]
+	
+	#print("selected time: ", selected_time)
+
+	if int(glitch_time + selected_time) in valid_times:
+		return int(glitch_time + selected_time)#, (glitch_time + t_offsets).astype(int)
+	else:
+		print("WARNING: CANNOT OFFSET GPS TIME ENOUGH TO ENSURE GLITCH APPEARS IN SNR TIME SERIES")
+		return valid_times[np.argmin(np.abs(valid_times - int(glitch_time + selected_time)))]
