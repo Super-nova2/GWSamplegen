@@ -47,7 +47,7 @@ class Loader:
             )
         else:
             return fetch_timeseries(
-                channels, start, stop, array_like=self.array_like
+                channels, start, stop, array_like=self.array_like, version = 1
             )
 
 
