@@ -63,7 +63,7 @@ def get_valid_noise_times(
 	end_time: int = None,
 	blacklisting: bool = True,
 	f_lower = 30
-) -> (List[int], np.ndarray, List[Path]):
+) -> Tuple[List[int], np.ndarray, List[Path]]:
 	"""multipurpose function to return a list of valid GPS start times, a list of noise file paths 
 	and a list of deconstructed file names.
 
@@ -143,13 +143,13 @@ def get_valid_noise_times(
 		times = np.arange(path[1], path[1]+path[2] - noise_len + 1, min_step)
 		if path[1] + path[2] - noise_len not in times:
 
-			if int((path[1] + path[2] - noise_len) - times[-1]) != 1:
-				#This if-else condition is to solve the edge case of a 1 second noise segment.
+			if int((path[1] + path[2] - noise_len) - times[-1]) > 2 and min_step != 1:
+				#This if-else condition is to solve the edge case of a 1 or 2 second noise segment.
 				#only relevant if min_step is not 1.
 				times = np.append(times, path[1] + path[2] - noise_len)
 			
 			else:
-				print("ignoring a 1 second segment")
+				print("ignoring a {} second segment".format(int((path[1] + path[2] - noise_len) - times[-1])))
 
 		valid_times = np.concatenate((valid_times,times))
 
@@ -430,7 +430,7 @@ def combine_seg_list(
 	macrostart: int, 
 	macroend: int, 
 	min_duration: int
-) -> (List[Tuple[int]], List[Tuple[int]], List[Tuple[int]]):
+) -> Tuple[List[Tuple[int]], List[Tuple[int]], List[Tuple[int]]]:
 	"""
 	Find overlapping segments between two detectors within a window
 	defined by two GPS times.
@@ -559,6 +559,7 @@ def load_psd(
 	with open(noise_dir+ '/args.json') as f:
 		args = json.load(f)
 		ifo_list = args['detectors']
+		#TODO: map ifo list to requested ifos.
 
 	psd = np.load(noise_dir + "/psd.npy")
 	psds = {}
