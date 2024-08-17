@@ -5,7 +5,7 @@ performing array-wise matched filtering on batches of samples and templates.
 
 
 import numpy as np
-
+from typing import Tuple
 
 def np_weighted_inner(
     one: np.ndarray, 
@@ -62,7 +62,7 @@ def np_get_cutoff_indices(
     fhigh: int, 
     delta_f: int, 
     N: int
-) -> (int, int):
+) -> Tuple[int, int]:
     
     """
     Compute indexes of low and high frequency cutoffs.
