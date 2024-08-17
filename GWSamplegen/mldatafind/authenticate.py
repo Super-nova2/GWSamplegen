@@ -121,4 +121,6 @@ def authenticate():
     else:
         make_cert(cert_path)
 
+    print("authentication completed. Certificate path: ", cert_path)
+
     return cert_path

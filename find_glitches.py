@@ -4,33 +4,26 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable, List
 from GWSamplegen.mldatafind import authenticate
+import igwn_auth_utils
+
 
 import h5py
 import numpy as np
 from omicron.cli.process import main as omicron_main
 #from omicron_utils import omicron_main_wrapper
-
-#TODO: put these params in a config file or something
-
-
-#this file should only be run on a LIGO cluster, as it requires omicron to work. If you want to install omicron elsewhere, good luck.
-
-#IMPORTANT!!! before running this file, be sure to authenticate! (ps TODO auto-authentication)
-#make sure the following are defined in your bashrc with your username:
-
-#KRB5_KTNAME=/home/user.name/auth/ligo.org.keytab
-#X509_USER_PROXY=/home/user.name/auth/CERT_KEY.pem
-#LIGO_USERNAME=user.name
+import os
 
 authenticate.authenticate()
 
 
-#these should be pulled from noise dir
-#start = 1239150592
-#end = int(1239150592 + 5e5)
+def get_O3_week(week):
+    """Returns the start and end times of the given week of O3."""
+    start = 1238166018 + (week-1)*60*60*24*7
+    end = start + 60*60*24*7
+    return start, end
 
-start = 1238166018
-end = 1238770818
+#Specify start and end times if you're running on a week in O3. Otherwise, specify your own start and end times.
+start, end = get_O3_week(10)
 
 ifos = ["H1", "L1"]
 
@@ -39,10 +32,9 @@ frame_type = "HOFT_CLEAN_SUB60HZ_C01"
 channel =  "DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01"
 state_flag = "DMT-ANALYSIS_READY:1"
 
-#below are from Aframe
-#frame_type = "HOFT_C01"
-#channel = "DCS-CALIB_STRAIN_CLEAN_C01"
-#state_flag = "DCS-CALIB_STRAIN_CLEAN_C01:1"
+#directory to save the glitches
+glitchdir='glitches_week10'
+
 
 def omicron_main_wrapper(
     start: int,
@@ -114,11 +106,13 @@ def omicron_main_wrapper(
         f"{stop}",
         "--ifo",
         ifo,
-        "-C 10",
+        "-C 60",
         "--max-concurrent",
         str(20),
         "-c",
-        "request_disk=4GB",
+        "request_disk=2GB",
+        "-c",
+        "request_memory=4096",
         "--output-dir",
         str(run_dir),
         "--skip-gzip",
@@ -135,18 +129,12 @@ def omicron_main_wrapper(
 
 
 
-#1239150592
-#1239150592 + 3600*10
-#q_max: 150
-
-#TODO: allow some of these params to be specified, such as f_min/f_max and frame/channel/state?
-
-for ifo in ifos:
+def find_glitches(ifo):
 
     done = omicron_main_wrapper(
         start=start,
         stop=end,
-        run_dir=Path("./glitches/triggers_{}".format(ifo)),
+        run_dir=Path("./{}/triggers_{}".format(glitchdir,ifo)),
         q_min=3.3166,
         q_max=150,
         f_min=18,
@@ -157,7 +145,7 @@ for ifo in ifos:
         segment_duration=64,
         overlap=4,
         mismatch_max=0.2,
-        snr_thresh=5,
+        snr_thresh=6,
         frame_type=frame_type,
         channel=channel,
         state_flag=state_flag,
@@ -169,15 +157,10 @@ for ifo in ifos:
     print("finished finding glitches for {}".format(ifo))
 
     #create a dictionary of the triggers
-    
-    from pathlib import Path
 
-    #H1_glitches and L1_glitches from aframe args are in omicron2/BNS
-
-    #trigger_dir = Path("./BNS_{}/merge/{}:DCS-CALIB_STRAIN_CLEAN_C01/".format(ifo,ifo))
-
+    print(Path("./{}/triggers_{}/merge/{}:{}/".format(glitchdir, ifo, ifo, channel)))
     #general path is config_dir/triggers_ifo/merge/ifo:channel
-    trigger_dir = Path("./glitches/triggers_{}/merge/{}:{}/".format(ifo, ifo, channel))
+    trigger_dir = Path("./{}/triggers_{}/merge/{}:{}/".format(glitchdir, ifo, ifo, channel))
     print(trigger_dir)
     trigger_files = sorted(list(trigger_dir.glob("*.h5")))
 
@@ -191,16 +174,8 @@ for ifo in ifos:
                 else:
                     triggers[key] = np.concatenate((triggers[key],np.array(f['triggers'][key])))
 
-    np.save("{}_glitches.npy".format(ifo),triggers)
+    np.save("./{}/{}_glitches.npy".format(glitchdir, ifo),triggers)
 
 
-#NOTE: their fmax is defined as sample_rate/2, so 2048/2 = 1024
-
-#From aframe/projects/sandbox/pyproject.toml we have TONS of their parameters!
-
-#channel = "DCS-CALIB_STRAIN_CLEAN_C01"
-#frame_type = "HOFT_C01"
-#state_flag = "DCS-CALIB_STRAIN_CLEAN_C01:1"
-
-#omicron-process GW --config-file ./omiconfig.ini --gps 1239150592 1239636444 --no-submit --verbose --ifo H1 -c request_disk=4GB --skip-gzip --skip-rm
-
+for ifo in ifos:
+    find_glitches(ifo)
