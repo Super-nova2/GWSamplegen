@@ -1,20 +1,5 @@
 #this file will generate the config files for a project. 
 
-#NEW PLAN: each 'config' directory will instead be a `project` directory containing:
-#1. an args file, which defines the waveform args to use, as well as the noise and template bank directories
-#2. directories for  associated SNR series + signal/noise files, and a params file containing all that directory's parameters
-# This way we can generate multiple files with the same parameters without having to create an entirely new config each time.
-# There should also be some params that can be changed on a per-file basis, such as seconds of EW
-
-
-#TODO params to add:
-#SEEDS
-#waveform length?
-
-#Other params that probably should be added in a DIFFERENT file:
-#seconds before + after merger to slice SNR timeseries
-#seconds of early warning
-#duration of noise to fetch?
 
 import argparse
 import multiprocessing as mp
@@ -47,7 +32,7 @@ from bilby.core.prior import (
 )
 from bilby.gw.prior import UniformComovingVolume, UniformSourceFrame
 
-from GWSamplegen.waveform_utils import choose_templates, load_pycbc_templates, choose_templates_new, chirp_mass
+from GWSamplegen.waveform_utils import load_pycbc_templates, choose_templates_new, chirp_mass
 from GWSamplegen.glitch_utils import get_glitchy_times, get_glitchy_gps_time
 from GWSamplegen.noise_utils import two_det_timeslide, get_valid_noise_times, load_psd
 from asyncSNR_np import get_projected_waveform_mp
@@ -697,7 +682,6 @@ while generated_samples < n_signal_samples:
         for i in range(waveforms_per_batch):
 
             #TODO: generalise to 3+ detectors. For now, works fine for one or two detectors.
-            #also clean this code up, there's too many nested if statements for my liking.
             if isinstance(glitch_frac, list):
                 for j in range(len(glitch_frac)):
                     if np.random.uniform(0,1) < glitch_frac[j]:

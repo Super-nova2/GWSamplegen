@@ -167,7 +167,7 @@ def get_valid_noise_times(
 	if blacklisting:
 		
 		#TODO: make this work with arbitrary folder location. relative path should be the same...
-		gps_blacklist = load_gps_blacklist(f_lower, "/fred/oz016/alistair/GWSamplegen/noise/segments/event_gpstimes.json")
+		gps_blacklist = load_gps_blacklist(f_lower, "./GWSamplegen/noise/segments/event_gpstimes.json")
 		n_blacklisted = len(np.where(np.isin(valid_times, gps_blacklist-noise_len//2))[0])
 		print("{} GPS times are too close to detected events and have been removed".format(n_blacklisted))
 		valid_times = np.delete(valid_times, np.where(np.isin(valid_times, gps_blacklist-noise_len//2)))

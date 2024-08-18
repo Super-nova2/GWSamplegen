@@ -25,7 +25,7 @@ def get_glitchy_times(
 		freq_cutoff: float = 0.0, 
 		seconds_before: int = 1, 
 		seconds_after: int = 1
-) -> (np.ndarray, np.ndarray, np.ndarray):
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 	"""
 	Given a list of valid times and a glitch file from find_glitches.py, return a list of glitchy times and glitchless times.
 
