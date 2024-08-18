@@ -26,6 +26,8 @@ load*
 /*.json
 /*.sh
 
+!template_banks/PyCBC_98_aligned_spin.txt
+!template_banks/PyCBC_98_aligned_spin_intermediate.hdf
 
 glitches
 
