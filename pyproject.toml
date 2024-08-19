@@ -1,11 +1,26 @@
 [project]
 name = "GWSamplegen"
-version = "0.1.4"
+version = "0.1.5"
 authors = [
 	{name = "Alistair McLeod", email = "alistair.mcleod@research.uwa.edu.au"},
 	{name = "Damon Beveridge", email = "damon.beveridge@research.uwa.edu.au"},
 	]
 description = "A package for generating gravitational wave signals and SNR time series."
+dependencies = [
+	"astropy >= 5.3.1",
+	"bilby > 2.1.2",
+	"gwpy >= 3.0.8",
+	"h5py >= 3.9.0",
+	"numpy >= 1.24.0",
+	"pycbc >= 2.2.0",
+]
+requires-python = ">= 3.10"
+readme = "README.md"
+license = {text = "MIT License"}
 
 [tool.setuptools]
 packages = ['GWSamplegen']
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

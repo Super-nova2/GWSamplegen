@@ -1,6 +1,6 @@
 # GWSamplegen
 
-A library of tools and scripts for generating compact binary merger samples in real LIGO noise. Specialised for creating SNR time series datasets for use in machine learning.
+A library of tools and scripts for generating compact binary merger samples in real LIGO noise. Specialised for creating SNR time series datasets for use in deep learning.
 
 The general process for creating datasets is as follows:
 
@@ -9,6 +9,24 @@ The general process for creating datasets is as follows:
 3. (optional) Generate a template bank using pycbc_geom_aligned_bank. Still need to add the code for doing this correctly. Otherwise, use the provided BNS bank, or the all source type GstLAL bank.
 4. Make an arguments file for specifying the parameter distributions of the dataset. The provided `args.json` file will generate the dataset used in our BNS detection paper.
 5. Run  `generate_configs.sh`, then `SNR_np.sh` to generate the parameter file, then the SNR time series dataset.
+
+## Installation
+
+First, ensure you have a python virtual environment (version 3.10 or above). Next, clone this repository with:
+
+```
+git clone https://github.com/alistair-mcleod/GWSamplegen.git
+```
+then `cd` into GWSamplegen and run
+
+```
+pip install .
+```
+
+## Usage notes
+
+While generating parameter files is relatively fast, creating the SNR time series datasets would take a couple of days without access to a compute cluster (ideally above 100 cores). The job submission scripts are currently written with Slurm syntax, and you may need to rewrite them if you're not using a Slurm-based cluster.
+
 
 ## Job Submission Scripts
 

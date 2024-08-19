@@ -7,7 +7,6 @@ Utilities for selecting templates for matching with data.
 
 import numpy as np
 import scipy.stats as st
-import json
 from pycbc.tmpltbank.option_utils import metricParameters
 from pycbc.tmpltbank.coord_utils import get_point_distance, get_cov_params
 from pathlib import Path

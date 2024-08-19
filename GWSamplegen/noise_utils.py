@@ -16,14 +16,11 @@ Functions for fetching, loading and selecting noise segments.
 
 import os
 import numpy as np
-from typing import Iterator, List, Optional, Sequence, Tuple
-import h5py
-import matplotlib.pyplot as plt
+from typing import List, Tuple
 from pycbc.types.timeseries import TimeSeries
 from pycbc.types import FrequencySeries
 from pycbc.psd import interpolate, inverse_spectrum_truncation
 import json
-import time
 from GWSamplegen.waveform_utils import t_at_f
 from pathlib import Path
 

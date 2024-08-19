@@ -4,33 +4,21 @@
 import os
 import multiprocessing as mp
 import argparse
-from typing import Iterator, List, Optional, Sequence, Tuple
 import json
-
-#import asyncio
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
-
-import matplotlib.pyplot as plt
 import numpy as np
-#import tensorflow as tf
-
-#from GWSamplegen.SNR_utils import array_matched_filter, tf_get_cutoff_indices
 from GWSamplegen.snr_utils_np import numpy_matched_filter, np_get_cutoff_indices
 from GWSamplegen.noise_utils import get_valid_noise_times, load_noise, fetch_noise_loaded, load_psd
 
-#rom pycbc.filter import matched_filter
-from pycbc.filter import highpass, lowpass
+from pycbc.filter import highpass
 from pycbc.detector import Detector
-from pycbc.psd import interpolate, inverse_spectrum_truncation
-from pycbc.types import FrequencySeries
 from pycbc.types.timeseries import TimeSeries
 from pycbc.waveform import get_fd_waveform, get_td_waveform
 import pycbc.noise
 
 import time 
 
-from astropy.utils import iers
-iers.conf.auto_download = False
+#from astropy.utils import iers
+#iers.conf.auto_download = False
 
 def get_projected_waveform_mp(args, waveform_duration=None):
 	ifos = ['H1', 'L1']

@@ -6,7 +6,7 @@ import multiprocessing as mp
 import json
 import os
 import time
-from typing import TYPE_CHECKING, Optional, Union
+from typing import Union
 
 import numpy as np
 
@@ -18,12 +18,7 @@ from pycbc.psd import interpolate
 from pycbc.inject.inject import legacy_approximant_name
 
 from bilby.core.prior import (
-    ConditionalPowerLaw,
-    ConditionalPriorDict,
-    Constraint,
     Cosine,
-    Gaussian,
-    LogNormal,
     PowerLaw,
     PriorDict,
     Sine,

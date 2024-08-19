@@ -1,8 +1,6 @@
 import os
-import h5py
 import numpy as np
 import json
-from gwpy.timeseries import TimeSeries, TimeSeriesDict
 from GWSamplegen.mldatafind.find import find_data
 from GWSamplegen.noise_utils import combine_seg_list, construct_noise_PSD, get_valid_noise_times
 
@@ -16,16 +14,13 @@ frame_type = "HOFT_CLEAN_SUB60HZ_C01"
 channel =  "DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01"
 state_flag = "DMT-ANALYSIS_READY:1"
 
+week = 4
 
-print("starting")
 
-week = 14
-
-write_dir = "/fred/oz016/alistair/GWSamplegen/noise/O3_week_" + str(week)
-#write_dir = "/fred/oz016/damon/GWSamplegen/noise/O3_fourth_week_64"
+write_dir = "./noise/O3_week_" + str(week)
 
 def get_O3_week(week):
-    """Returns the start and end times of the given week of O3."""
+    """Returns the start and end times of the given week of O3. Weeks are 1-indexed, i.e. week 1 is from day 0 up until day 7."""
     start = 1238166018 + (week-1)*60*60*24*7
     end = start + 60*60*24*7
     return start, end
@@ -33,7 +28,6 @@ def get_O3_week(week):
 start, end = get_O3_week(week)
 
 
-#get current working directory
 cwd = os.getcwd()
 
 sample_rate = 2048
@@ -46,40 +40,18 @@ if not os.path.exists(write_dir):
 
 ifos = ["H1","L1"]
 
+ifo_1 = './GWSamplegen/noise/segments/H1_O3a.txt'
+ifo_2 = './GWSamplegen/noise/segments/L1_O3a.txt'
 
-ifo_1 = '/fred/oz016/alistair/GWSamplegen/noise/segments/H1_O3a.txt'
-ifo_2 = '/fred/oz016/alistair/GWSamplegen/noise/segments/L1_O3a.txt'
-
-
-#start of O3: 1238166018
-#second week of O3 start: 1238770818
-
-# start = 1239375618
-# end = start + 60*60*24*7
-
-
-
-#start = 1238166018
-#end = start + 60*60*24*7
 
 print(start, end)
 
-#1239150592 is some time in O3, a bit after GW190425
-#start = 1239150592
-#end = start+5e5
-
 segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,start,end, min_duration=min_duration)
-
 
 print(segs)
 
-#data = find_data(segs, ifos)
-
-#channelname = ":GDS-CALIB_STRAIN"
+#with GWOSC data there's no channel name needed.
 channelname = ""
-
-#channelname = ":DCS-CALIB_STRAIN_CLEAN-SUB60HZ_C01"
-
 channels = [ifo + channelname for ifo in ifos]
 
 
@@ -112,7 +84,7 @@ print("finished downloading noise! now calculating PSDs.")
 
 
 _, _ , paths = get_valid_noise_times(write_dir, min_duration)
-
+print(paths)
 
 construct_noise_PSD(paths)
 
