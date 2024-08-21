@@ -6,7 +6,7 @@ template_banks/*
 #noise can also contain large amounts of data
 noise/*
 
-!noise/segments/
+#!noise/segments/
 
 #configs contains all the generated SNR time series
 
@@ -28,6 +28,7 @@ load*
 
 !template_banks/PyCBC_98_aligned_spin.txt
 !template_banks/PyCBC_98_aligned_spin_intermediate.hdf
+!GWSamplegen/segments/*
 
 glitches
 

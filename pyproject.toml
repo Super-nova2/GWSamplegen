@@ -19,7 +19,11 @@ readme = "README.md"
 license = {text = "MIT License"}
 
 [tool.setuptools]
-packages = ['GWSamplegen']
+packages = ['GWSamplegen', 'GWSamplegen.segments']
+include-package-data = true
+
+[tool.setuptools.package-data]
+GWSamplegen = ['segments/*']
 
 [build-system]
 requires = ["setuptools", "wheel"]
