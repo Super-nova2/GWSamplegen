@@ -23,16 +23,23 @@ from pycbc.psd import interpolate, inverse_spectrum_truncation
 import json
 from GWSamplegen.waveform_utils import t_at_f
 from pathlib import Path
+from importlib import resources as impresources
+from GWSamplegen import segments
 
 #TODO: handle arbitrary groups of interferometers. Assume each noise file in a dir has the same ifos
 
 def load_gps_blacklist(
 	f_lower: int, 
-	event_file: Path = '../noise/segments_event_gpstimes.json'
+	event_file: Path = None
 ) -> np.ndarray:
 	"""Load a .json file containing real event data, for the purpose of removing valid GPS times so that
 	we don't accidentally include real events in training sets or background data."""
 	
+	if event_file is None:
+		event_file = impresources.files(segments).joinpath("event_gpstimes.json")
+	else:
+		event_file = Path(event_file)
+
 	with open(event_file) as f:
 		events = json.load(f)['events']
 	gps_blacklist = []
@@ -59,6 +66,7 @@ def get_valid_noise_times(
 	start_time: int = None,
 	end_time: int = None,
 	blacklisting: bool = True,
+	blacklisting_file: Path = None,
 	f_lower = 30
 ) -> Tuple[List[int], np.ndarray, List[Path]]:
 	"""multipurpose function to return a list of valid GPS start times, a list of noise file paths 
@@ -87,6 +95,10 @@ def get_valid_noise_times(
 	
 	blacklisting: bool
 		if True, will remove any GPS times that are too close to detected events. Defaults to True.
+	
+	blacklisting_file: Path
+		path to a json file containing GPS times of detected events. Defaults to None, in which case the default
+		file from the GWSamplegen package is used. This file currently contains all detected events up to and including O3.
 
 	Returns
 	-------
@@ -163,8 +175,7 @@ def get_valid_noise_times(
 
 	if blacklisting:
 		
-		#TODO: make this work with arbitrary folder location. relative path should be the same...
-		gps_blacklist = load_gps_blacklist(f_lower, "./GWSamplegen/noise/segments/event_gpstimes.json")
+		gps_blacklist = load_gps_blacklist(f_lower, blacklisting_file)
 		n_blacklisted = len(np.where(np.isin(valid_times, gps_blacklist-noise_len//2))[0])
 		print("{} GPS times are too close to detected events and have been removed".format(n_blacklisted))
 		valid_times = np.delete(valid_times, np.where(np.isin(valid_times, gps_blacklist-noise_len//2)))
