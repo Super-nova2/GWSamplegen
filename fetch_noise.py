@@ -3,6 +3,8 @@ import numpy as np
 import json
 from GWSamplegen.mldatafind.find import find_data
 from GWSamplegen.noise_utils import combine_seg_list, construct_noise_PSD, get_valid_noise_times
+from GWSamplegen import segments
+from importlib import resources as impresources
 
 #script to fetch noise data from GWOSC and save it to disk. Since this requires an internet connection, 
 #you will have to run it on a node with internet access if submitting to a compute cluster.
@@ -40,13 +42,21 @@ if not os.path.exists(write_dir):
 
 ifos = ["H1","L1"]
 
-ifo_1 = './GWSamplegen/noise/segments/H1_O3a.txt'
-ifo_2 = './GWSamplegen/noise/segments/L1_O3a.txt'
+#segment files are available in the segments module as IFO_Observingrun.txt
+ifo_1 = 'H1_O3a.txt'
+ifo_2 = 'L1_O3a.txt'
 
 
 print(start, end)
 
-segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,start,end, min_duration=min_duration)
+try:
+    ifo_1 = impresources.files(segments).joinpath(ifo_1)
+    ifo_2 = impresources.files(segments).joinpath(ifo_2)
+
+    segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,start,end, min_duration=min_duration)
+    print("found segment files")
+except:
+    segs, h1, l1 = combine_seg_list(ifo_1,ifo_2,start,end, min_duration=min_duration)
 
 print(segs)
 
