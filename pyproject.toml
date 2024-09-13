@@ -19,7 +19,7 @@ readme = "README.md"
 license = {text = "MIT License"}
 
 [tool.setuptools]
-packages = ['GWSamplegen', 'GWSamplegen.segments']
+packages = ['GWSamplegen', 'GWSamplegen.segments', 'GWSamplegen.mldatafind']
 include-package-data = true
 
 [tool.setuptools.package-data]
