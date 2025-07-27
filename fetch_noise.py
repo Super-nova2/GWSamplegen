@@ -37,7 +37,7 @@ min_duration = 1024
 
 #create write_dir if it doesn't exist
 if not os.path.exists(write_dir):
-    os.mkdir(write_dir)
+    os.makedirs(write_dir, exist_ok=True)
     
 
 ifos = ["H1","L1"]
